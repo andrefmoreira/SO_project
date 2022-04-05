@@ -3,23 +3,41 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/shm.h>
+#include <pthread.h>
 
 
 typedef struct {
     int capacidade_processamento;
-    int altura_processamento;
-    float precoTotal; //METER AQUI VALORES QUE QUEREMOS QUE AINDA NAO SEI.
-    int pesoTotal;
-    int cliente;
+    int altura_receber_tarefa;
+    int nivel_performance;
 } shared_mem;
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 shared_mem *my_sharedm;
 
 
+void *vcpu(void *t)
+{
+
+}
+
+void edge_server()
+{
+    pthread_t thread_vcpu[2];
+    int id[2];
+    for(int i = 0 ; i < 2 ; i++)
+        pthread_create(&thread_vcpu[i], NULL, vcpu, (void*)&id[i]);
+}
+
+
 void task_manager()
 {
 
+    if(fork() == 0)
+    {
+        edge_server()
+        exit(0);
+    }
 }
 
 void monitor()
@@ -62,7 +80,6 @@ int main() {
         mantinance_manager();
         exit(0);
     }
-
 
 
     return 0;
