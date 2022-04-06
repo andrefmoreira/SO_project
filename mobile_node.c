@@ -39,7 +39,7 @@ int main(int argc, char *argv[]) {
         exit(-1);
     }
     
-    printf("%d \n %d\n %d\n %d\n" , num_pedidos, intervalo, instr, temp_max);
+    printf("%d\n %d\n %d\n %d\n" , num_pedidos, intervalo, instr, temp_max);
     
     return 0;
 }
