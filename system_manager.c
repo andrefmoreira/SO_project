@@ -35,7 +35,7 @@ void task_manager()
 
     if(fork() == 0)
     {
-        edge_server()
+        edge_server();
         exit(0);
     }
 }
