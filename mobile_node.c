@@ -38,8 +38,8 @@ int main(int argc, char *argv[]) {
         printf("Erro no 4º parâmetro!\n");
         exit(-1);
     }
-    
-    printf("%d\n %d\n %d\n %d\n" , num_pedidos, intervalo, instr, temp_max);
-    
+
+    printf("%ld\n %ld\n %ld\n %ld\n" , num_pedidos, intervalo, instr, temp_max);
+
     return 0;
 }
