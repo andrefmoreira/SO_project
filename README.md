@@ -1,9 +1,12 @@
 # SO_project
 
+
+
 MOBILE NODES:
 - Criação do mobile node
 - Leitura correta dos parâmetros da linha de comando
 - Geração e escrita das tarefas no named pipe
+
 
 
 SYSTEM MANAGER:
@@ -17,6 +20,7 @@ validação dos dados do ficheiro e aplicação das configurações lidas
 - Capturar o sinal SIGINT, terminar a corrida e liberta os recursos
 
 
+
 TASK MANAGER:
 - Criar os processos Edge Server de acordo com as configurações
 - Ler e validar comandos lidos do named pipe
@@ -24,9 +28,11 @@ TASK MANAGER:
 - Criação da thread dispatcher para distribuição das tarefas
 
 
+
 EDGE SERVER:
 - Criação das threads que simulam os vCPUs
 - Executar as tarefas
+
 
 
 MONITOR:
@@ -34,12 +40,15 @@ MONITOR:
 estabelecidas
 
 
+
 MAINTENANCE MANAGER:
 - Gerar mensagens de manutenção, receber resposta e gerir a manutenção
 
 
+
 FICHEIRO LOG:
 - Envio sincronizado do output para ficheiro de log e ecrã
+
 
 
 GERAL:
