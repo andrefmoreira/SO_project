@@ -1,0 +1,5 @@
+system_manager.o: system_manager.c
+	gcc -Wall -pthread system_manager.c -o system_manager
+
+mobile_node.o: mobile_node.c
+	gcc -Wall mobile_node.c -o mobile_node	
