@@ -3,8 +3,8 @@
 
 
 MOBILE NODES:
-- Criação do mobile node
-- Leitura correta dos parâmetros da linha de comando
+- Criação do mobile node    *DONE*
+- Leitura correta dos parâmetros da linha de comando     *DONE*
 - Geração e escrita das tarefas no named pipe
 
 
@@ -12,9 +12,9 @@ MOBILE NODES:
 SYSTEM MANAGER:
 - Arranque do simulador de offloading, leitura do ficheiro de configurações,
 validação dos dados do ficheiro e aplicação das configurações lidas
-- Criação da memória partilhada
+- Criação da memória partilhada          *DONE*
 - Criação do named pipe
-- Criação dos processos Task Manager, Monitor e Maintenance Manager
+- Criação dos processos Task Manager, Monitor e Maintenance Manager             *DONE*
 - Criação da fila de mensagens
 - Escrever a informação estatística no ecrã como resposta ao sinal SIGTSTP
 - Capturar o sinal SIGINT, terminar a corrida e liberta os recursos
@@ -22,7 +22,7 @@ validação dos dados do ficheiro e aplicação das configurações lidas
 
 
 TASK MANAGER:
-- Criar os processos Edge Server de acordo com as configurações
+- Criar os processos Edge Server de acordo com as configurações        *IN PROGRESS*
 - Ler e validar comandos lidos do named pipe
 - Criação da thread scheduler e gestão do escalonamento das tarefas
 - Criação da thread dispatcher para distribuição das tarefas
@@ -30,7 +30,7 @@ TASK MANAGER:
 
 
 EDGE SERVER:
-- Criação das threads que simulam os vCPUs
+- Criação das threads que simulam os vCPUs       *DONE*
 - Executar as tarefas
 
 
@@ -47,7 +47,7 @@ MAINTENANCE MANAGER:
 
 
 FICHEIRO LOG:
-- Envio sincronizado do output para ficheiro de log e ecrã
+- Envio sincronizado do output para ficheiro de log e ecrã         *IN PROGRESS*
 
 
 
