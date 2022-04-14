@@ -11,7 +11,7 @@ MOBILE NODES:
 
 SYSTEM MANAGER:
 - Arranque do simulador de offloading, leitura do ficheiro de configurações,
-validação dos dados do ficheiro e aplicação das configurações lidas
+validação dos dados do ficheiro e aplicação das configurações lidas            *DONE*
 - Criação da memória partilhada          *DONE*
 - Criação do named pipe
 - Criação dos processos Task Manager, Monitor e Maintenance Manager             *DONE*
