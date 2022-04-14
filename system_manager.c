@@ -97,11 +97,11 @@ void thread_scheduler(){
 
 void edge_server() {
 
-    long capacity1 , capacity2;
+    //long capacity1 , capacity2;
     char server_name[64];
 
-    capacity1 = my_sharedm->capac_proc1;
-    capacity2 = my_sharedm->capac_proc2;
+    //capacity1 = my_sharedm->capac_proc1;
+    //capacity2 = my_sharedm->capac_proc2;
 
     strcpy(server_name ,edge_server_name);
 
