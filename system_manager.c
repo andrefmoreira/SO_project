@@ -31,7 +31,13 @@ FILE *log_file;
 FILE *config_file;
 
 void *vcpu(void *u) {
+    pthread_mutex_lock(&mutex);
 
+    //codigo do vcpu
+
+    pthread_mutex_unlock(&mutex);
+
+    pthread_exit(NULL);
 }
 
 long read_file(){
@@ -81,7 +87,16 @@ long read_file(){
     return num_servers;
 }
 
+
+void thread_scheduler(){
+
+
+}
+
+
+
 void edge_server() {
+
     long capacity1 , capacity2;
     char server_name[64];
 
@@ -93,9 +108,11 @@ void edge_server() {
     pthread_t thread_vcpu[2];
     int id[2];
 
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 2; i++)
         pthread_create(&thread_vcpu[i], NULL, vcpu, (void *) &id[i]);
-    }
+
+    for(int i = 0; i < 2; i++)
+        pthread_join(thread_vcpu[i],NULL);
 }
 
 
@@ -152,6 +169,7 @@ void maintenance_manager() {
 
 
 int main() {
+
     log_file  = fopen("log_file.txt", "w");
 
     if(log_file == NULL){
@@ -182,6 +200,15 @@ int main() {
 
         exit(1);
     }
+
+    if(fork() == 0){
+        fprintf(log_file, "%s:Process Task Manager created.\n" , s);
+        printf("%s:Process Task Manager created.\n" , s);
+
+        thread_scheduler();
+        exit(0);
+    }
+
 
     if(fork() == 0) {
         fprintf(log_file, "%s:Process Task Manager created.\n" , s);
