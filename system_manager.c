@@ -7,21 +7,25 @@
 #include <time.h>
 #include <assert.h>
 #include <string.h>
+#include <semaphore.h>
 
 
 typedef struct {
-    long capac_proc1;
-    long capac_proc2;
+    int capac_proc1;
+    int capac_proc2;
     int alt_receber_tarefa;
     int nivel_perf;
 } shared_mem;
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 shared_mem *my_sharedm;
+sem_t semaphore;
 
 time_t t;
 struct tm *tm;
 
+char capac1[20];
+char capac2[20];
 char s[64];
 char queue_pos[20];
 char max_wait[20];
@@ -40,18 +44,15 @@ void *vcpu(void *u) {
     pthread_exit(NULL);
 }
 
-long read_file(){
-
-    char *pointer;
+int read_file() {
     char num_edge_servers[20];
-    long num_servers;
+    int num_servers;
 
     config_file = fopen("config_file.txt" , "r");
 
     if(config_file == NULL){
         fprintf(log_file, "%s:Error opening config file.\n" , s);
         printf("%s:Error opening config file.\n" , s);
-
         exit(1);
     }
 
@@ -70,11 +71,11 @@ long read_file(){
         printf("%s:Error reading file.\n" , s);
     }
 
-    num_servers = strtol(num_edge_servers , &pointer , 10);
+    num_servers = atoi(num_edge_servers);
 
     if(num_servers == 0){
-        fprintf(log_file, "%s:Error converting to long.\n" , s);
-        printf("%s:Error converting to long.\n" , s);
+        fprintf(log_file, "%s:Error converting to int.\n" , s);
+        printf("%s:Error converting to int (WTF) .\n" , s);
         exit(1);
     }
 
@@ -108,53 +109,70 @@ void edge_server() {
     pthread_t thread_vcpu[2];
     int id[2];
 
-    for (int i = 0; i < 2; i++)
+    for (int i = 0; i < 2; i++) {
+        id[i] = i;
         pthread_create(&thread_vcpu[i], NULL, vcpu, (void *) &id[i]);
+    }
 
-    for(int i = 0; i < 2; i++)
+    for(int i = 0; i < 2; i++) {
         pthread_join(thread_vcpu[i],NULL);
+    }
+
 }
 
 
 
 void task_manager() {
 
-    char capac1[20];
-    char capac2[20];
-    char *ptr;
-    long edge_servers;
+    int x = 0;
+    int edge_servers;
+    char line[64];
+    char *tokens;
 
     edge_servers = read_file();
 
-    for(int i = 0 ; i < edge_servers ; i++){
 
-        if(fscanf(config_file , "%s,%s,%s" , edge_server_name , capac1 , capac2) != 1){
+    for (int i = 0 ; i < edge_servers ; i++) {
+
+        if (fscanf(config_file , "%s" , line) != 1) {
             fprintf(log_file, "%s:Error reading file.\n" , s);
             printf("%s:Error reading file.\n" , s);
         }
 
-        my_sharedm->capac_proc1 = strtol(capac1 , &ptr , 10);
-        my_sharedm->capac_proc2 = strtol(capac2 , &ptr , 10);
+        tokens = strtok(line, ",");
+        strcpy(edge_server_name, tokens);
+
+        tokens = strtok(NULL, ",");
+        strcpy(capac1, tokens);
+
+        tokens = strtok(NULL, ",");
+        strcpy(capac2, tokens);
+
+        my_sharedm->capac_proc1 = atoi(capac1);
+        my_sharedm->capac_proc2 = atoi(capac2);
+
 
         if(my_sharedm->capac_proc1 == 0){
-            fprintf(log_file, "%s:Error converting to long.\n" , s);
-            printf("%s:Error converting to long.\n" , s);
+            fprintf(log_file, "%s:Error converting to int.\n" , s);
+            printf("%s:Error converting to int.\n" , s);
             exit(1);
         }
         if(my_sharedm->capac_proc2 == 0){
-            fprintf(log_file, "%s:Error converting to long.\n" , s);
-            printf("%s:Error converting to long.\n" , s);
+            fprintf(log_file, "%s:Error converting to int.\n" , s);
+            printf("%s:Error converting to int.\n" , s);
             exit(1);
         }
 
         if(fork() == 0) {
-            fprintf(log_file, "%s:Process Maintenance Manager created.\n" , s);
+            fprintf(log_file, "%s:Process edge_server created.\n" , s);
             printf("%s:Process edge_server created.\n" , s);
-
+            
             edge_server();
             exit(0);
         }
     }
+    
+    while (wait(&x) > 0);
 }
 
 
@@ -180,7 +198,7 @@ int main() {
     }
 
     int shmid;
-    int status;
+    int status = 0;
 
     t = time(NULL);
     tm = localtime(&t);
@@ -202,8 +220,8 @@ int main() {
     }
 
     if(fork() == 0){
-        fprintf(log_file, "%s:Process Task Manager created.\n" , s);
-        printf("%s:Process Task Manager created.\n" , s);
+        fprintf(log_file, "%s:Process Thread Scheduler created.\n" , s);
+        printf("%s:Process Thread Scheduler created.\n" , s);
 
         thread_scheduler();
         exit(0);
@@ -233,9 +251,6 @@ int main() {
         maintenance_manager();
         exit(0);
     }
-
-    fprintf(log_file, "%s:Simulator waitting for last tasks to finish.\n" , s);
-    printf("%s:Simulator waitting for last tasks to finish.\n" , s);
 
     while ((wait(&status)) > 0);
 
