@@ -1,3 +1,9 @@
+/* 
+Trabalho realizado por:
+André Filipe de Oliveira Nº 2020239416
+Pedro Miguel Pereira Catorze Nº 2020222916
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
