@@ -1,11 +1,12 @@
-#include <stdio.h>
-#include <stdlib.h>
-
 /* 
 Trabalho realizado por:
 André Filipe de Oliveira Nº 2020239416
 Pedro Miguel Pereira Catorze Nº 2020222916
 */
+
+
+#include <stdio.h>
+#include <stdlib.h>
 
 int main(int argc, char *argv[]) {
     long num_pedidos, intervalo, instr, temp_max;
