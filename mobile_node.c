@@ -1,7 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* Trabalho realizado por:
+/* 
+Trabalho realizado por:
 André Filipe de Oliveira Nº 2020239416
 Pedro Miguel Pereira Catorze Nº 2020222916
 */
