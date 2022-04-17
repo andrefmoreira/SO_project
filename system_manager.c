@@ -53,12 +53,22 @@ void *vcpu(void *u) {
 
 
 void write_file(char string[]){
+
+    log_file  = fopen("log_file.txt", "a");
+
+
+    if(log_file == NULL){
+        write_file("%s:Error opening log file.\n");
+        exit(1);
+    }
+
     pthread_mutex_lock(&mutex_log);
 
     fprintf(log_file, string , s);
     printf(string , s);
 
     pthread_mutex_unlock(&mutex_log);
+    fclose(log_file);
 }
 
 
@@ -200,15 +210,12 @@ void maintenance_manager() {
 
 int main() {
 
-    log_file  = fopen("log_file.txt", "w");
-
-    if(log_file == NULL){
-        write_file("%s:Error opening log file.\n");
-        exit(1);
-    }
-
     int shmid;
     int status = 0;
+
+    log_file  = fopen("log_file.txt", "w");
+    fclose(log_file);
+
 
     t = time(NULL);
     tm = localtime(&t);
@@ -257,8 +264,6 @@ int main() {
     while ((wait(&status)) > 0);
 
     write_file("%s:Simulator closed.\n");
-
-    fclose(log_file);
 
     pthread_mutex_destroy(&mutex);
     pthread_mutex_destroy(&mutex_log);
