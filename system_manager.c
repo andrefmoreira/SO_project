@@ -27,7 +27,6 @@ pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex_log = PTHREAD_MUTEX_INITIALIZER;
 
 shared_mem *my_sharedm;
-sem_t semaphore;
 
 time_t t;
 struct tm *tm;
@@ -52,6 +51,17 @@ void *vcpu(void *u) {
     pthread_exit(NULL);
 }
 
+
+void write_file(char string[]){
+    pthread_mutex_lock(&mutex_log);
+
+    fprintf(log_file, string , s);
+    printf(string , s);
+
+    pthread_mutex_unlock(&mutex_log);
+}
+
+
 int read_file() {
     char num_edge_servers[20];
     int num_servers;
@@ -59,55 +69,34 @@ int read_file() {
     config_file = fopen("config_file.txt" , "r");
 
     if(config_file == NULL){
-        pthread_mutex_lock(&mutex_log);
-        fprintf(log_file, "%s:Error opening config file.\n" , s);
-        pthread_mutex_unlock(&mutex_log);
-
-        printf("%s:Error opening config file.\n" , s);
+        write_file("%s:Error opening config file.\n");
         exit(1);
     }
 
     if(fscanf(config_file , "%s", queue_pos) != 1){
-        pthread_mutex_lock(&mutex_log);
-        fprintf(log_file, "%s:Error reading file.\n" , s);
-        pthread_mutex_unlock(&mutex_log);
-
-        printf("%s:Error reading file.\n" , s);
+        write_file("%s:Error reading file.\n");
+        exit(1);
     }
 
     if(fscanf(config_file , "%s", max_wait) != 1){
-        pthread_mutex_lock(&mutex_log);
-        fprintf(log_file, "%s:Error reading file.\n" , s);
-        pthread_mutex_unlock(&mutex_log);
-
-        printf("%s:Error reading file.\n" , s);
+        write_file("%s:Error reading file.\n");
+        exit(1);
     }
 
     if(fscanf(config_file , "%s", num_edge_servers) != 1){
-        pthread_mutex_lock(&mutex_log);
-        fprintf(log_file, "%s:Error reading file.\n" , s);
-        pthread_mutex_unlock(&mutex_log);
-
-        printf("%s:Error reading file.\n" , s);
+        write_file("%s:Error reading file.\n");
+        exit(1);
     }
 
     num_servers = atoi(num_edge_servers);
 
     if(num_servers == 0){
-        pthread_mutex_lock(&mutex_log);
-        fprintf(log_file, "%s:Error converting to int.\n" , s);
-        pthread_mutex_unlock(&mutex_log);
-
-        printf("%s:Error converting to int (WTF) .\n" , s);
+        write_file("%s:Error converting to int.\n");
         exit(1);
     }
 
     if(num_servers < 2){
-        pthread_mutex_lock(&mutex_log);
-        fprintf(log_file, "%s:Error in number of edge servers.\n" , s);
-        pthread_mutex_unlock(&mutex_log);
-
-        printf("%s:Error in number of edge servers.\n" , s);
+        write_file("%s:Error in number of edge servers.\n" );
         exit(1);
     }
 
@@ -161,11 +150,8 @@ void task_manager() {
     for (int i = 0 ; i < edge_servers ; i++) {
 
         if (fscanf(config_file , "%s" , line) != 1) {
-            pthread_mutex_lock(&mutex_log);
-            fprintf(log_file, "%s:Error reading file.\n" , s);
-            pthread_mutex_unlock(&mutex_log);
-
-            printf("%s:Error reading file.\n" , s);
+            write_file("%s:Error reading file.\n");
+            exit(1);
         }
 
         tokens = strtok(line, ",");
@@ -182,28 +168,16 @@ void task_manager() {
 
 
         if(my_sharedm->capac_proc1 == 0){
-            pthread_mutex_lock(&mutex_log);
-            fprintf(log_file, "%s:Error converting to int.\n" , s);
-            pthread_mutex_unlock(&mutex_log);
-
-            printf("%s:Error converting to int.\n" , s);
+            write_file("%s:Error converting to int.\n");
             exit(1);
         }
         if(my_sharedm->capac_proc2 == 0){
-            pthread_mutex_lock(&mutex_log);
-            fprintf(log_file, "%s:Error converting to int.\n" , s);
-            pthread_mutex_unlock(&mutex_log);
-
-            printf("%s:Error converting to int.\n" , s);
+            write_file("%s:Error converting to int.\n");
             exit(1);
         }
 
         if(fork() == 0) {
-            pthread_mutex_lock(&mutex_log);
-            fprintf(log_file, "%s:Process edge_server created.\n" , s);
-            pthread_mutex_unlock(&mutex_log);
-
-            printf("%s:Process edge_server created.\n" , s);
+            write_file("%s:Process edge_server created.\n");
 
             edge_server();
             exit(0);
@@ -229,12 +203,7 @@ int main() {
     log_file  = fopen("log_file.txt", "w");
 
     if(log_file == NULL){
-        pthread_mutex_lock(&mutex_log);
-        fprintf(log_file, "%s:Error opening log file.\n" , s);
-        pthread_mutex_unlock(&mutex_log);
-
-        printf("%s:Error opening log file.\n" , s);
-
+        write_file("%s:Error opening log file.\n");
         exit(1);
     }
 
@@ -247,31 +216,17 @@ int main() {
 
     // Criar o segmento de memória partilhada
     if ((shmid = shmget(IPC_PRIVATE, sizeof(shared_mem), IPC_CREAT | 0777)) < 0){
-        pthread_mutex_lock(&mutex_log);
-        fprintf(log_file, "%s:Error na funcao shmget.\n" , s);
-        pthread_mutex_unlock(&mutex_log);
-
-        printf("%s:Erro na funcao shmget\n" , s);
-
+        write_file("%s:Error na funcao shmget.\n");
         exit(1);
     }
 
     if ((my_sharedm = shmat(shmid, NULL, 0)) == (shared_mem *) -1) {
-        pthread_mutex_lock(&mutex_log);
-        fprintf(log_file, "%s:Erro na funcao shmat.\n" , s);
-        pthread_mutex_unlock(&mutex_log);
-
-        printf("%s:Erro na funcao shmat\n" , s);
-
+        write_file("%s:Erro na funcao shmat\n");
         exit(1);
     }
 
     if(fork() == 0){
-        pthread_mutex_lock(&mutex_log);
-        fprintf(log_file, "%s:Process Thread Scheduler created.\n" , s);
-        pthread_mutex_unlock(&mutex_log);
-
-        printf("%s:Process Thread Scheduler created.\n" , s);
+        write_file("%s:Process Thread Scheduler created.\n");
 
         thread_scheduler();
         exit(0);
@@ -279,33 +234,21 @@ int main() {
 
 
     if(fork() == 0) {
-        pthread_mutex_lock(&mutex_log);
-        fprintf(log_file, "%s:Process Task Manager created.\n" , s);
-        pthread_mutex_unlock(&mutex_log);
-
-        printf("%s:Process Task Manager created.\n" , s);
+        write_file("%s:Process Task Manager created.\n");
 
         task_manager();
         exit(0);
     }
 
     if(fork() == 0){
-        pthread_mutex_lock(&mutex_log);
-        fprintf(log_file, "%s:Process Monitor created.\n" , s);
-        pthread_mutex_unlock(&mutex_log);
-
-        printf("%s:Process Monitor created.\n" , s);
+        write_file("%s:Process Monitor created.\n");
 
         monitor();
         exit(0);
     }
 
     if(fork() == 0) {
-        pthread_mutex_lock(&mutex_log);
-        fprintf(log_file, "%s:Process Maintenance Manager created.\n" , s);
-        pthread_mutex_unlock(&mutex_log);
-
-        printf("%s:Process Maintenance Manager created.\n" , s);
+        write_file("%s:Process Maintenance Manager created.\n");
 
         maintenance_manager();
         exit(0);
@@ -313,11 +256,7 @@ int main() {
 
     while ((wait(&status)) > 0);
 
-    pthread_mutex_lock(&mutex_log);
-    fprintf(log_file, "%s:Simulator closed.\n" , s);
-    pthread_mutex_unlock(&mutex_log);
-
-    printf("%s:Simulator closed.\n" , s);
+    write_file("%s:Simulator closed.\n");
 
     fclose(log_file);
 
