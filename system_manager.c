@@ -76,12 +76,6 @@ void write_file(char string[]){
 
     log_file  = fopen("log_file.txt", "a");
 
-
-    if(log_file == NULL){
-        write_file("%s:Error opening log file.\n");
-        exit(1);
-    }
-
     pthread_mutex_lock(&mutex_log);
 
     fprintf(log_file, string , s);
