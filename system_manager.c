@@ -15,12 +15,12 @@ Pedro Miguel Pereira Catorze Nº 2020222916
 #include <string.h>
 #include <semaphore.h>
 
-typedef struct task{
+typedef struct task {
     int id;
-    int n_instrucoes;
-    double tempo_maximo;
+    int num_instr;
+    double temp_max;
     int prioridade;
-    double tempo;
+    double time;
 } task;
 
 
@@ -95,18 +95,18 @@ void reavaliar_prioridade(){ //TASK MANAGER
         prioridade = 1;
 
         for(int x = 0 ; x < length ; x++){
-            if(num_tasks[i].tempo_maximo < num_tasks[x].tempo_maximo)
+            if(num_tasks[i].temp_max < num_tasks[x].temp_max)
                 prioridade++;
-            else if(num_tasks[i].tempo_maximo == num_tasks[x].tempo_maximo){
+            else if(num_tasks[i].temp_max == num_tasks[x].temp_max){
                 //tem o mesmo tempo maximo mas a task atual foi inserida depois da task a que esta a comparar.
                 if(i > x)
                     prioridade++;
 
             }
         }
-        num_tasks[i].tempo = clock() - num_tasks[i].tempo;
+        num_tasks[i].time = clock() - num_tasks[i].time;
 
-        if(num_tasks[i].tempo > num_tasks[i].tempo_maximo){
+        if(num_tasks[i].time > num_tasks[i].temp_max){
             write_file("Max time has passed! Removing task...\n");
             apagar_task(i);
         }
@@ -151,18 +151,18 @@ void *vcpu(void *u){
             capac_proc = my_sharedm->capac_proc1;
     }
 
-    time = ((double)num_tasks[atual_task].n_instrucoes * 1000) / (capac_proc * 1000000);
-    num_tasks[atual_task].tempo = clock() - num_tasks[atual_task].tempo;
-    time = time + num_tasks[atual_task].tempo;
+    time = ((double)num_tasks[atual_task].num_instr * 1000) / (capac_proc * 1000000);
+    num_tasks[atual_task].time = clock() - num_tasks[atual_task].time;
+    time = time + num_tasks[atual_task].time;
 
-    if(time <= num_tasks[atual_task].tempo_maximo){
+    if(time <= num_tasks[atual_task].temp_max){
         pthread_mutex_lock(&mutex);
 
         //codigo do vcpu
 
         pthread_mutex_unlock(&mutex);
         //sempre que acaba uma tarefa esta livre e vai chamar o thread dispatcher.
-        write_file("Task finished.\n");
+        write_file("Task finished successfully.\n");
     }
     else {
         write_file("Task doesn't meet the time limit! Removing task...\n");
@@ -181,34 +181,34 @@ int read_file() {
     config_file = fopen("config_file.txt" , "r");
 
     if(config_file == NULL){
-        write_file("%s:Error opening config file.\n");
+        write_file("%s:Error opening config file!\n");
         exit(1);
     }
 
     if(fscanf(config_file , "%s", queue_pos) != 1){
-        write_file("%s:Error reading file.\n");
+        write_file("%s:Error reading file!\n");
         exit(1);
     }
 
     if(fscanf(config_file , "%s", max_wait) != 1){
-        write_file("%s:Error reading file.\n");
+        write_file("%s:Error reading file!\n");
         exit(1);
     }
 
     if(fscanf(config_file , "%s", num_edge_servers) != 1){
-        write_file("%s:Error reading file.\n");
+        write_file("%s:Error reading file!\n");
         exit(1);
     }
 
     num_servers = atoi(num_edge_servers);
 
     if(num_servers == 0){
-        write_file("%s:Error converting to int.\n");
+        write_file("%s:Error converting to int!\n");
         exit(1);
     }
 
     if(num_servers < 2){
-        write_file("%s:Error in number of edge servers.\n" );
+        write_file("%s:Wrong number of edge servers!\n" );
         exit(1);
     }
 
@@ -229,12 +229,12 @@ void edge_server() {
 
     // Criar o segmento de memória partilhada
     if ((shmid = shmget(IPC_PRIVATE, sizeof(shared_mem), IPC_CREAT | 0777)) < 0){
-        write_file("%s:Error na funcao shmget.\n");
+        write_file("%s:Error on shmget function!\n");
         exit(1);
     }
 
     if ((my_sharedm = shmat(shmid, NULL, 0)) == (shared_mem *) -1) {
-        write_file("%s:Erro na funcao shmat\n");
+        write_file("%s:Error on shmat function!\n");
         exit(1);
     }
 
@@ -284,7 +284,7 @@ void add_task(task added_task){ //TASK MANAGER
 
     if(full == 0){
         num_tasks[index] = added_task;
-        added_task.tempo = clock(); // tem de mudar para momento em que chega do pipe
+        added_task.time = clock(); // tem de mudar para momento em que chega do pipe
         if(queuepos * 0.8 <= index+1){
             if(tempmin > maxwait) { //Perguntar o que e o temp_min!
                 my_sharedm->nivel_perf = 1;
@@ -314,7 +314,7 @@ void task_manager() { //TASK MANAGER
     for (int i = 0 ; i < edge_servers ; i++) {
 
         if (fscanf(config_file , "%s" , line) != 1) {
-            write_file("%s:Error reading file.\n");
+            write_file("%s:Error reading file!\n");
             exit(1);
         }
 
@@ -332,11 +332,11 @@ void task_manager() { //TASK MANAGER
 
 
         if(my_sharedm->capac_proc1 == 0){
-            write_file("%s:Error converting to int.\n");
+            write_file("%s:Error converting to int!\n");
             exit(1);
         }
         if(my_sharedm->capac_proc2 == 0){
-            write_file("%s:Error converting to int.\n");
+            write_file("%s:Error converting to int!\n");
             exit(1);
         }
 
