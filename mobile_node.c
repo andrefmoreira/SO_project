@@ -9,43 +9,44 @@ Pedro Miguel Pereira Catorze Nº 2020222916
 #include <stdlib.h>
 
 int main(int argc, char *argv[]) {
-    long num_pedidos, intervalo, instr, temp_max;
+    int num_ped, intervalo, instr, temp_max;
 
     if (argc != 5) {
-        printf("Número errado de parâmetros!\n");
+        printf("Wrong number of parameters!\n");
         exit(-1);
     }
 
-    if (strtol(argv[1], argv, 10) != 0) {
-        num_pedidos = strtol(argv[1], argv, 10);
+    if (atoi(argv[1]) != 0) {
+        num_ped = atoi(argv[1]);
     } else {
-        printf("Erro no 1º parâmetro!\n");
+        printf("Error on the first parameter!\n");
         exit(-1);
     }
 
-    if (strtol(argv[2], argv, 10) != 0) {
-        intervalo = strtol(argv[2], argv, 10);
+    if (atoi(argv[2]) != 0) {
+        intervalo = atoi(argv[2]);
     } else {
-        printf("Erro no 2º parâmetro!\n");
+        printf("Error on the second parameter!\n");
         exit(-1);
     }
 
-    if (strtol(argv[3], argv, 10) != 0) {
-        instr = strtol(argv[3], argv, 10);
+    if (atoi(argv[3]) != 0) {
+        instr = atoi(argv[3]);
     } else {
-        printf("Erro no 3º parâmetro!\n");
+        printf("Error on the third parameter!\n");
         exit(-1);
     }
 
 
-    if (strtol(argv[4], argv, 10) != 0) {
-        temp_max = strtol(argv[4], argv, 10);
+    if (atoi(argv[4]) != 0) {
+        temp_max = atoi(argv[4]);
     } else {
-        printf("Erro no 4º parâmetro!\n");
+        printf("Error on the fourth parameter!\n");
         exit(-1);
     }
 
-    printf("%ld\n %ld\n %ld\n %ld\n" , num_pedidos, intervalo, instr, temp_max);
+    //debug printf: parametros lidos
+    printf("Valores lidos:\n%d\n%d\n%d\n%d\n", num_ped, intervalo, instr, temp_max);
 
     return 0;
 }
