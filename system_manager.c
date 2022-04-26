@@ -55,6 +55,32 @@ struct task *num_tasks;
 FILE *log_file;
 FILE *config_file;
 
+void add_task(task added_task){ //TASK MANAGER
+
+    int index = sizeof(&num_tasks) / sizeof(task);
+    int queuepos = atoi(queue_pos);
+    int maxwait = atoi(max_wait);
+    int full = 0;
+
+    if(index == queuepos){
+        write_file("Queue full! Removing task...\n");
+        full = -1;
+    }
+
+    if(full == 0){
+        num_tasks[index] = added_task;
+        added_task.time = clock(); // tem de mudar para momento em que chega do pipe
+        if(queuepos * 0.8 <= index+1){
+            if(tempmin > maxwait) { //Perguntar o que e o temp_min!
+                my_sharedm->nivel_perf = 1;
+            }
+        }
+
+        reavaliar_prioridade();
+    }
+
+}
+
 void apagar_task(int indice ){ //TASK MANAGER
 
     int length = sizeof(&num_tasks) / sizeof(task);
@@ -121,7 +147,6 @@ void *vcpu(void *u){
 
     //vamos fazer um while ate nao ter mais tarefas.
 
-
     int capac_proc;
     int id = *((int*)u);
     int array_size = sizeof(&num_tasks) / sizeof(task);
@@ -151,6 +176,8 @@ void *vcpu(void *u){
             capac_proc = my_sharedm->capac_proc1;
     }
 
+    //tempo minimo e o tempo que num momento T o vcpu demora a ficar livre, ou seja vcpu ta ocupado, no melhor dos casos no momento T+X o vcpu esta livre, ou seja temp min = X.
+
     time = ((double)num_tasks[atual_task].num_instr * 1000) / (capac_proc * 1000000);
     num_tasks[atual_task].time = clock() - num_tasks[atual_task].time;
     time = time + num_tasks[atual_task].time;
@@ -162,6 +189,8 @@ void *vcpu(void *u){
 
         pthread_mutex_unlock(&mutex);
         //sempre que acaba uma tarefa esta livre e vai chamar o thread dispatcher.
+        //chama atraves de uma variavel de condicao que o dispatcher vai estar a espera. (livre = 0 nao corre o dispatcher , > 0 corre)
+        //perguntar como e que identificamos qual vcpu esta livre.
         write_file("Task finished successfully.\n");
     }
     else {
@@ -217,7 +246,12 @@ int read_file() {
 
 
 void thread_scheduler(){
+    while(1){
+        //esperar mensagem do pipe.
+        //criar a task com os valores recebidos.
 
+        add_task(task);
+    }
 
 }
 
@@ -270,34 +304,6 @@ void edge_server() {
 }
 
 
-void add_task(task added_task){ //TASK MANAGER
-
-    int index = sizeof(&num_tasks) / sizeof(task);
-    int queuepos = atoi(queue_pos);
-    int maxwait = atoi(max_wait);
-    int full = 0;
-
-    if(index == queuepos){
-        write_file("Queue full! Removing task...\n");
-        full = -1;
-    }
-
-    if(full == 0){
-        num_tasks[index] = added_task;
-        added_task.time = clock(); // tem de mudar para momento em que chega do pipe
-        if(queuepos * 0.8 <= index+1){
-            if(tempmin > maxwait) { //Perguntar o que e o temp_min!
-                my_sharedm->nivel_perf = 1;
-            }
-        }
-
-        //aqui temos de ir para o thread scheduler?
-        reavaliar_prioridade();
-    }
-
-}
-
-
 void task_manager() { //TASK MANAGER
 
     int x = 0;
@@ -305,10 +311,13 @@ void task_manager() { //TASK MANAGER
     char line[64];
     char *tokens;
     int queuepos;
+    int id = 1;
 
     edge_servers = read_file();
     queuepos = atoi(queue_pos);
     num_tasks = malloc(queuepos * sizeof(task));
+
+    pthread_create(&thread_vcpu[0], NULL, thread_scheduler, (void *) id);
 
 
     for (int i = 0 ; i < edge_servers ; i++) {
@@ -405,3 +414,4 @@ int main() {
 
     return 0;
 }
+ 
