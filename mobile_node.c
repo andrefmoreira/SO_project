@@ -8,6 +8,13 @@ Pedro Miguel Pereira Catorze Nº 2020222916
 #include <stdio.h>
 #include <stdlib.h>
 
+typedef struct {
+    int id_tarefa;
+    int n_instrucoes;
+    double temp_max;
+}task;
+
+
 int main(int argc, char *argv[]) {
     int num_ped, intervalo, instr, temp_max;
 
