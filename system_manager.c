@@ -38,6 +38,7 @@ typedef struct {
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex_log = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t  cond_var = PTHREAD_COND_INITIALIZER;
 
 shared_mem *my_sharedm;
 
@@ -189,7 +190,7 @@ void *vcpu(void *u){
 
         pthread_mutex_unlock(&mutex);
         //sempre que acaba uma tarefa esta livre e vai chamar o thread dispatcher.
-        //chama atraves de uma variavel de condicao que o dispatcher vai estar a espera. (livre = 0 nao corre o dispatcher , > 0 corre)
+        pthread_cond_signal(&cond_var);
         //perguntar como e que identificamos qual vcpu esta livre.
         write_file("Task finished successfully.\n");
     }
