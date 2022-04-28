@@ -14,6 +14,8 @@ Pedro Miguel Pereira Catorze Nº 2020222916
 #include <assert.h>
 #include <string.h>
 #include <semaphore.h>
+#define PIPE_NAME "TASK_PIPE"
+
 
 typedef struct task {
     int id;
@@ -32,7 +34,7 @@ typedef struct task {
 typedef struct {
     int capac_proc1;
     int capac_proc2;
-    int alt_receber_tarefa;
+    int alt_receber_tarefa; //o que e isto?
     int nivel_perf; //isto e uma flag?
 } shared_mem;
 
@@ -51,6 +53,7 @@ char s[64];
 char queue_pos[20];
 char max_wait[20];
 char edge_server_name[64];
+int fd;
 struct task *num_tasks;
 
 FILE *log_file;
@@ -70,9 +73,9 @@ void add_task(task added_task){ //TASK MANAGER
 
     if(full == 0){
         num_tasks[index] = added_task;
-        added_task.time = clock(); // tem de mudar para momento em que chega do pipe
+
         if(queuepos * 0.8 <= index+1){
-            if(tempmin > maxwait) { //Perguntar o que e o temp_min!
+            if(tempmin > maxwait) { //Perguntar o que e o temp_min! , capaz de ter de ser feito no monitor....
                 my_sharedm->nivel_perf = 1;
             }
         }
@@ -82,18 +85,22 @@ void add_task(task added_task){ //TASK MANAGER
 
 }
 
-void apagar_task(int indice ){ //TASK MANAGER
+void delete_task(int indice ){ //TASK MANAGER
 
     int length = sizeof(&num_tasks) / sizeof(task);
     int queuepos = atoi(queue_pos);
+    int prioridade_task = num_tasks[indice].prioridade;
 
-    for (int i = indice - 1; i < length -1; i++)
-    {
+    for (int i = indice; i < length -1; i++)
+    {   
+        if(prioridade_task < num_tasks[i+1].prioridade)
+            num_tasks[i].prioridade--;
+
         num_tasks[i] = num_tasks[i+1]; // assign arr[i+1] to arr[i]
     }
 
     if(my_sharedm->nivel_perf == 1){
-        if(queuepos * 0.2 >= length-1){
+        if(queuepos * 0.2 >= length-1){ //capaz de ter de ser feito no monitor....
             my_sharedm->nivel_perf = 0;
         }
     }
@@ -135,7 +142,7 @@ void reavaliar_prioridade(){ //TASK MANAGER
 
         if(num_tasks[i].time > num_tasks[i].temp_max){
             write_file("Max time has passed! Removing task...\n");
-            apagar_task(i);
+            delete_task(i);
         }
 
         num_tasks[i].prioridade = prioridade;
@@ -190,13 +197,16 @@ void *vcpu(void *u){
 
         pthread_mutex_unlock(&mutex);
         //sempre que acaba uma tarefa esta livre e vai chamar o thread dispatcher.
+
+        pthread_mutex_lock(&mutex);
         pthread_cond_signal(&cond_var);
+        pthread_mutex_unlock(&mutex);
         //perguntar como e que identificamos qual vcpu esta livre.
         write_file("Task finished successfully.\n");
     }
     else {
         write_file("Task doesn't meet the time limit! Removing task...\n");
-        apagar_task(atual_task);
+        delete_task(atual_task);
         reavaliar_prioridade();
 
     }
@@ -247,11 +257,15 @@ int read_file() {
 
 
 void thread_scheduler(){
-    while(1){
-        //esperar mensagem do pipe.
-        //criar a task com os valores recebidos.
 
-        add_task(task);
+    task t2;
+    while(1){
+        read(fd, &t2, sizeof(task));
+
+        t2.time = clock();
+        add_task(t2);
+        //esperar mensagem do pipe.
+        //criar a task com os valores recebidos.;
     }
 
 }
@@ -379,6 +393,16 @@ int main() {
     log_file  = fopen("log_file.txt", "w");
     fclose(log_file);
 
+    if ((mkfifo(PIPE_NAME, O_CREAT|O_EXCL|0600)<0) && (errno!= EEXIST)) {
+        write_file("Error creating pipe");
+        exit(0);
+    }
+
+
+    if ((fd = open(PIPE_NAME, O_RDONLY)) < 0) {
+        write_file("Error oppening pipe for reading.");
+        exit(0);
+    }
 
     t = time(NULL);
     tm = localtime(&t);
