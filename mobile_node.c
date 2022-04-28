@@ -8,15 +8,17 @@ Pedro Miguel Pereira Catorze Nº 2020222916
 #include <stdio.h>
 #include <stdlib.h>
 
-typedef struct {
-    int id_tarefa;
-    int n_instrucoes;
+typedef struct task {
+    int id;
+    int num_instr;
     double temp_max;
-}task;
+    int prioridade;
+    double time;
+} task;
 
 
 int main(int argc, char *argv[]) {
-    int num_ped, intervalo, instr, temp_max;
+    int num_ped, intervalo, instr, tempo_max;
 
     if (argc != 5) {
         printf("Wrong number of parameters!\n");
@@ -46,14 +48,34 @@ int main(int argc, char *argv[]) {
 
 
     if (atoi(argv[4]) != 0) {
-        temp_max = atoi(argv[4]);
+        tempo_max = atoi(argv[4]);
     } else {
         printf("Error on the fourth parameter!\n");
         exit(-1);
     }
 
     //debug printf: parametros lidos
-    printf("Valores lidos:\n%d\n%d\n%d\n%d\n", num_ped, intervalo, instr, temp_max);
+    printf("Valores lidos:\n%d\n%d\n%d\n%d\n", num_ped, intervalo, instr, tempo_max);
+
+    if ((fd = open(PIPE_NAME, O_WRONLY)) < 0) {
+        perror("Cannot open pipe for writing: ");
+        exit(0);
+    }
+
+    task.num_instr = instr;
+    task.temp_max = tempo_max;
+    task.prioridade = 1;
+    task.tempo = 0;
+
+
+    int intervalo_seconds = (((double) intervalo + 500) / 1000);
+
+    for(int i = 0 ; i < num_ped ; i++){
+        task.id = i;
+        write(fd, &task, sizeof(task));
+
+        sleep(intervalo_seconds);
+    }
 
     return 0;
 }
