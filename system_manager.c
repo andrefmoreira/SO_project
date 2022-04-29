@@ -1,6 +1,6 @@
 /*
 Trabalho realizado por:
-André Filipe de Oliveira Nº 2020239416
+André Filipe de Oliveira Moreira Nº 2020239416
 Pedro Miguel Pereira Catorze Nº 2020222916
 */
 
@@ -59,6 +59,7 @@ char queue_pos[20];
 char max_wait[20];
 char edge_server_name[64];
 int fd;
+int shmid;
 struct task *num_tasks;
 
 FILE *log_file;
@@ -102,7 +103,7 @@ void delete_task(int indice ){ //TASK MANAGER
 void reavaliar_prioridade(){ //TASK MANAGER
 
 
-    printf("reavaliating priority");
+    printf("reavaliating priority\n");
     int prioridade = 1;
     int length = sizeof(&num_tasks) / sizeof(task);
 
@@ -141,7 +142,7 @@ void add_task(task added_task){ //TASK MANAGER
     int maxwait = atoi(max_wait);
     int full = 0;
 
-    printf("Adding task %d" , added_task.id);
+    printf("Adding task %d\n" , added_task.id);
 
     if(index == queuepos){
         write_file("Queue full! Removing task...\n");
@@ -270,13 +271,18 @@ int read_file() {
 
 void * thread_scheduler(void *x){
 
+	if ((fd = open(PIPE_NAME, O_RDONLY)) < 0) {
+        write_file("Error oppening pipe for reading.\n");
+        exit(0);
+    }
+    
     task t2;
     while(1){
-        read(fd, &t2, sizeof(task));
+        read(fd, &t2, sizeof(task)); //fazer aqui uma função para ler e esperar pelo signal dela para continuar.
 
         t2.time = clock();
 
-        printf("task %d just arrived" , t2.id);
+        printf("task %d just arrived\n" , t2.id);
         add_task(t2);
         //esperar mensagem do pipe.
         //criar a task com os valores recebidos.;
@@ -287,8 +293,6 @@ void * thread_scheduler(void *x){
 
 
 void edge_server() {
-
-    int shmid;
 
     // Criar o segmento de memória partilhada
     if ((shmid = shmget(IPC_PRIVATE, sizeof(shared_mem), IPC_CREAT | 0777)) < 0){
@@ -334,20 +338,20 @@ void edge_server() {
 
 
 void task_manager() { //TASK MANAGER
-
+	
     int x = 0;
     int edge_servers;
     char line[64];
     char *tokens;
     int queuepos;
-    int id = 1;
+    int id_scheduler = 1;
     pthread_t thread_sched;
 
     edge_servers = read_file();
     queuepos = atoi(queue_pos);
     num_tasks = malloc(queuepos * sizeof(task));
 
-    pthread_create(&thread_sched, NULL, thread_scheduler, (void *) &id);
+    pthread_create(&thread_sched, NULL, thread_scheduler, (void *) &id_scheduler);
 
 
     for (int i = 0 ; i < edge_servers ; i++) {
@@ -388,6 +392,7 @@ void task_manager() { //TASK MANAGER
     }
 
     while (wait(&x) > 0);
+    pthread_join(thread_sched,NULL);
 }
 
 
@@ -407,28 +412,30 @@ int main() {
 
     log_file  = fopen("log_file.txt", "w");
     fclose(log_file);
+    
+        // Criar o segmento de memória partilhada
+    if ((shmid = shmget(IPC_PRIVATE, sizeof(shared_mem), IPC_CREAT | 0777)) < 0){
+        write_file("%s:Error on shmget function!\n");
+        exit(1);
+    }
 
-    if (mkfifo(PIPE_NAME, O_CREAT|O_EXCL|0600)<0) {
+    if ((my_sharedm = shmat(shmid, NULL, 0)) == (shared_mem *) -1) {
+        write_file("%s:Error on shmat function!\n");
+        exit(1);
+    }
+
+
+
+    if (mkfifo(PIPE_NAME, O_CREAT|O_EXCL|0600)<0 && (errno!= EEXIST)) {
         write_file("Error creating pipe.\n");
         exit(0);
     }
 
-    if ((fd = open(PIPE_NAME, O_RDONLY)) < 0) {
-        write_file("Error oppening pipe for reading.\n");
-        exit(0);
-    }
 
     t = time(NULL);
     tm = localtime(&t);
     assert(strftime(s, sizeof(s), "%c", tm));
 
-
-    if(fork() == 0) {
-        write_file("%s:Process Task Manager created.\n");
-
-        task_manager();
-        exit(0);
-    }
 
     if(fork() == 0){
         write_file("%s:Process Monitor created.\n");
@@ -436,21 +443,28 @@ int main() {
         monitor();
         exit(0);
     }
+    
+    if(fork() == 0) {
+        write_file("%s:Process Task Manager created.\n");
+        
+        task_manager();
+        exit(0);
+    }
+
 
     if(fork() == 0) {
         write_file("%s:Process Maintenance Manager created.\n");
-
+		
         maintenance_manager();
         exit(0);
     }
 
     while ((wait(&status)) > 0);
-
+    
+	
     write_file("%s:Simulator closed.\n");
-
     pthread_mutex_destroy(&mutex);
     pthread_mutex_destroy(&mutex_log);
 
     return 0;
 }
- 
