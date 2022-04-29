@@ -7,6 +7,12 @@ Pedro Miguel Pereira Catorze Nº 2020222916
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <unistd.h>
+
+#define PIPE_NAME "TASK_PIPE"
+
 
 typedef struct task {
     int id;
@@ -18,7 +24,8 @@ typedef struct task {
 
 
 int main(int argc, char *argv[]) {
-    int num_ped, intervalo, instr, tempo_max;
+    int num_ped, intervalo;
+    task t;
 
     if (argc != 5) {
         printf("Wrong number of parameters!\n");
@@ -40,7 +47,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (atoi(argv[3]) != 0) {
-        instr = atoi(argv[3]);
+        t.num_instr = atoi(argv[3]);
     } else {
         printf("Error on the third parameter!\n");
         exit(-1);
@@ -48,33 +55,33 @@ int main(int argc, char *argv[]) {
 
 
     if (atoi(argv[4]) != 0) {
-        tempo_max = atoi(argv[4]);
+        t.temp_max = atof(argv[4]);
     } else {
         printf("Error on the fourth parameter!\n");
         exit(-1);
     }
 
-    //debug printf: parametros lidos
-    printf("Valores lidos:\n%d\n%d\n%d\n%d\n", num_ped, intervalo, instr, tempo_max);
+
+
+    int fd;
 
     if ((fd = open(PIPE_NAME, O_WRONLY)) < 0) {
         perror("Cannot open pipe for writing: ");
         exit(0);
     }
 
-    task.num_instr = instr;
-    task.temp_max = tempo_max;
-    task.prioridade = 1;
-    task.tempo = 0;
+
+    t.prioridade = 1;
+    t.time = 0;
 
 
-    int intervalo_seconds = (((double) intervalo + 500) / 1000);
+    int intervalo_micro = intervalo * 1000;
 
     for(int i = 0 ; i < num_ped ; i++){
-        task.id = i;
-        write(fd, &task, sizeof(task));
+        t.id = i;
+        write(fd, &t, sizeof(task));
 
-        sleep(intervalo_seconds);
+        usleep(intervalo_micro);
     }
 
     return 0;
