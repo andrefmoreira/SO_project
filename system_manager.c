@@ -14,6 +14,11 @@ Pedro Miguel Pereira Catorze Nº 2020222916
 #include <assert.h>
 #include <string.h>
 #include <semaphore.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
 #define PIPE_NAME "TASK_PIPE"
 
 
@@ -35,7 +40,7 @@ typedef struct {
     int capac_proc1;
     int capac_proc2;
     int alt_receber_tarefa; //o que e isto?
-    int nivel_perf; //isto e uma flag?
+    int nivel_perf; 
 } shared_mem;
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -59,31 +64,19 @@ struct task *num_tasks;
 FILE *log_file;
 FILE *config_file;
 
-void add_task(task added_task){ //TASK MANAGER
+void write_file(char string[]){
 
-    int index = sizeof(&num_tasks) / sizeof(task);
-    int queuepos = atoi(queue_pos);
-    int maxwait = atoi(max_wait);
-    int full = 0;
+    log_file  = fopen("log_file.txt", "a");
 
-    if(index == queuepos){
-        write_file("Queue full! Removing task...\n");
-        full = -1;
-    }
+    pthread_mutex_lock(&mutex_log);
 
-    if(full == 0){
-        num_tasks[index] = added_task;
+    fprintf(log_file, string , s);
+    printf(string , s);
 
-        if(queuepos * 0.8 <= index+1){
-            if(tempmin > maxwait) { //Perguntar o que e o temp_min! , capaz de ter de ser feito no monitor....
-                my_sharedm->nivel_perf = 1;
-            }
-        }
-
-        reavaliar_prioridade();
-    }
-
+    pthread_mutex_unlock(&mutex_log);
+    fclose(log_file);
 }
+
 
 void delete_task(int indice ){ //TASK MANAGER
 
@@ -99,28 +92,17 @@ void delete_task(int indice ){ //TASK MANAGER
         num_tasks[i] = num_tasks[i+1]; // assign arr[i+1] to arr[i]
     }
 
-    if(my_sharedm->nivel_perf == 1){
+    /*if(my_sharedm->nivel_perf == 1){
         if(queuepos * 0.2 >= length-1){ //capaz de ter de ser feito no monitor....
             my_sharedm->nivel_perf = 0;
         }
-    }
-}
-
-void write_file(char string[]){
-
-    log_file  = fopen("log_file.txt", "a");
-
-    pthread_mutex_lock(&mutex_log);
-
-    fprintf(log_file, string , s);
-    printf(string , s);
-
-    pthread_mutex_unlock(&mutex_log);
-    fclose(log_file);
+    }*/
 }
 
 void reavaliar_prioridade(){ //TASK MANAGER
 
+
+    printf("reavaliating priority");
     int prioridade = 1;
     int length = sizeof(&num_tasks) / sizeof(task);
 
@@ -146,6 +128,36 @@ void reavaliar_prioridade(){ //TASK MANAGER
         }
 
         num_tasks[i].prioridade = prioridade;
+    }
+
+}
+
+
+
+void add_task(task added_task){ //TASK MANAGER
+
+    int index = sizeof(&num_tasks) / sizeof(task);
+    int queuepos = atoi(queue_pos);
+    int maxwait = atoi(max_wait);
+    int full = 0;
+
+    printf("Adding task %d" , added_task.id);
+
+    if(index == queuepos){
+        write_file("Queue full! Removing task...\n");
+        full = -1;
+    }
+
+    if(full == 0){
+        num_tasks[index] = added_task;
+
+        /*if(queuepos * 0.8 <= index+1){
+            if(tempmin > maxwait) { //Perguntar o que e o temp_min! , capaz de ter de ser feito no monitor....
+                my_sharedm->nivel_perf = 1;
+            }
+        }*/
+
+        reavaliar_prioridade();
     }
 
 }
@@ -256,13 +268,15 @@ int read_file() {
 }
 
 
-void thread_scheduler(){
+void * thread_scheduler(void *x){
 
     task t2;
     while(1){
         read(fd, &t2, sizeof(task));
 
         t2.time = clock();
+
+        printf("task %d just arrived" , t2.id);
         add_task(t2);
         //esperar mensagem do pipe.
         //criar a task com os valores recebidos.;
@@ -327,12 +341,13 @@ void task_manager() { //TASK MANAGER
     char *tokens;
     int queuepos;
     int id = 1;
+    pthread_t thread_sched;
 
     edge_servers = read_file();
     queuepos = atoi(queue_pos);
     num_tasks = malloc(queuepos * sizeof(task));
 
-    pthread_create(&thread_vcpu[0], NULL, thread_scheduler, (void *) id);
+    pthread_create(&thread_sched, NULL, thread_scheduler, (void *) &id);
 
 
     for (int i = 0 ; i < edge_servers ; i++) {
@@ -393,14 +408,13 @@ int main() {
     log_file  = fopen("log_file.txt", "w");
     fclose(log_file);
 
-    if ((mkfifo(PIPE_NAME, O_CREAT|O_EXCL|0600)<0) && (errno!= EEXIST)) {
-        write_file("Error creating pipe");
+    if (mkfifo(PIPE_NAME, O_CREAT|O_EXCL|0600)<0) {
+        write_file("Error creating pipe.\n");
         exit(0);
     }
 
-
     if ((fd = open(PIPE_NAME, O_RDONLY)) < 0) {
-        write_file("Error oppening pipe for reading.");
+        write_file("Error oppening pipe for reading.\n");
         exit(0);
     }
 
