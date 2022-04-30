@@ -65,7 +65,7 @@ char edge_server_name[64];
 int fd;
 int shmid;
 struct task *num_tasks;
-
+ 
 
 task t2;
 FILE *log_file;
