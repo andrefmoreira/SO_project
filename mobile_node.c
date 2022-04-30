@@ -78,9 +78,10 @@ int main(int argc, char *argv[]) {
     int intervalo_micro = intervalo * 1000;
 
     for(int i = 0 ; i < num_ped ; i++){
+    
         t.id = i;
         write(fd, &t, sizeof(task));
-
+		printf("task %d enviada.\n",i);
         usleep(intervalo_micro);
     }
 
