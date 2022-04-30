@@ -45,11 +45,7 @@ typedef struct {
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex_log = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t mutex_pipe = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t mutex_sched = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t  cond_var = PTHREAD_COND_INITIALIZER;
-pthread_cond_t  cond_pipe = PTHREAD_COND_INITIALIZER;
-pthread_cond_t  cond_sched = PTHREAD_COND_INITIALIZER;
 
 shared_mem *my_sharedm;
 
@@ -64,8 +60,9 @@ char max_wait[20];
 char edge_server_name[64];
 int fd;
 int shmid;
+int length = 0;
 struct task *num_tasks;
- 
+
 
 task t2;
 FILE *log_file;
@@ -87,20 +84,20 @@ void write_file(char string[]){
 
 void delete_task(int indice ){ //TASK MANAGER
 
-    int length = sizeof(&num_tasks) / sizeof(task);
     int queuepos = atoi(queue_pos);
     int prioridade_task = num_tasks[indice].prioridade;
 
-    for (int i = indice; i < length -1; i++)
+    for (int i = length; i < length -1; i++)
     {   
         if(prioridade_task < num_tasks[i+1].prioridade)
             num_tasks[i].prioridade--;
 
         num_tasks[i] = num_tasks[i+1]; // assign arr[i+1] to arr[i]
     }
+    length--;
 
     /*if(my_sharedm->nivel_perf == 1){
-        if(queuepos * 0.2 >= length-1){ //capaz de ter de ser feito no monitor....
+        if(queuepos * 0.2 >= length){ //capaz de ter de ser feito no monitor....
             my_sharedm->nivel_perf = 0;
         }
     }*/
@@ -111,7 +108,6 @@ void reavaliar_prioridade(){ //TASK MANAGER
 
     printf("reavaliating priority\n");
     int prioridade = 1;
-    int length = sizeof(&num_tasks) / sizeof(task);
     
     printf("before reavaliating\n");
     for(int i = 0 ; i < length ; i++){
@@ -123,7 +119,7 @@ void reavaliar_prioridade(){ //TASK MANAGER
         prioridade = 1;
 
         for(int x = 0 ; x < length ; x++){
-            if(num_tasks[i].temp_max < num_tasks[x].temp_max)
+            if(num_tasks[i].temp_max > num_tasks[x].temp_max)
                 prioridade++;
             else if(num_tasks[i].temp_max == num_tasks[x].temp_max){
                 //tem o mesmo tempo maximo mas a task atual foi inserida depois da task a que esta a comparar.
@@ -153,29 +149,28 @@ void reavaliar_prioridade(){ //TASK MANAGER
 
 void add_task(task added_task){ //TASK MANAGER
 
-    int index = sizeof(&num_tasks) / sizeof(task); //ta mal a determinação da length , secalhar usamos indice global para determinar.
     int queuepos = atoi(queue_pos);
     int maxwait = atoi(max_wait);
     int full = 0;
 
     printf("Adding task %d\n" , added_task.id);
 
-    if(index == queuepos){
+    if(length == queuepos){
         write_file("Queue full! Removing task...\n");
         full = -1;
     }
 
     if(full == 0){
-        num_tasks[index] = added_task;
-    	printf("%d\n" , num_tasks[index].id); 
-    	printf("%d\n" , index);
+        num_tasks[length] = added_task;
+    	printf("%d\n" , num_tasks[length].id); 
+    	printf("%d\n" , length);
 
         /*if(queuepos * 0.8 <= index+1){
             if(tempmin > maxwait) { //Perguntar o que e o temp_min! , capaz de ter de ser feito no monitor....
                 my_sharedm->nivel_perf = 1;
             }
         }*/
-
+        length++;
         reavaliar_prioridade();
     }
 
@@ -311,7 +306,7 @@ void * thread_scheduler(void *x){
 		le_pipe();
 
         printf("task %d just arrived\n" , t2.id);
-        add_task(t2);
+        add_task(t2); //esta a enviar a ultima task 2 vezes
 
     }
 
