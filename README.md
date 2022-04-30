@@ -22,16 +22,16 @@ validação dos dados do ficheiro e aplicação das configurações lidas       
 
 
 TASK MANAGER:
-- Criar os processos Edge Server de acordo com as configurações        *IN PROGRESS*
-- Ler e validar comandos lidos do named pipe
-- Criação da thread scheduler e gestão do escalonamento das tarefas
+- Criar os processos Edge Server de acordo com as configurações        *DONE*
+- Ler e validar comandos lidos do named pipe                           *IN PROGRESS*
+- Criação da thread scheduler e gestão do escalonamento das tarefas    *IN PROGRESS*
 - Criação da thread dispatcher para distribuição das tarefas
 
 
 
 EDGE SERVER:
 - Criação das threads que simulam os vCPUs       *DONE*
-- Executar as tarefas
+- Executar as tarefas       
 
 
 
@@ -47,16 +47,16 @@ MAINTENANCE MANAGER:
 
 
 FICHEIRO LOG:
-- Envio sincronizado do output para ficheiro de log e ecrã         *IN PROGRESS*
+- Envio sincronizado do output para ficheiro de log e ecrã         *DONE*
 
 
 
 GERAL:
-- Criar um makefile
+- Criar um makefile                                           *DONE*
 - Diagrama com a arquitetura e mecanismos de sincronização
 - Suporte de concorrência no tratamento de pedidos
 - Deteção e tratamento de erros
-- Atualização da shm por todos os processos e threads que necessitem
+- Atualização da shm por todos os processos e threads que necessitem 
 - Sincronização com mecanismos adequados (semáforos, mutexes ou variáveis de
 condição)
 - Prevenção de interrupções indesejadas por sinais não especificados no enunciado;
