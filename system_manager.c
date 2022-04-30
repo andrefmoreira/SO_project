@@ -45,7 +45,11 @@ typedef struct {
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex_log = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t mutex_pipe = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t mutex_sched = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t  cond_var = PTHREAD_COND_INITIALIZER;
+pthread_cond_t  cond_pipe = PTHREAD_COND_INITIALIZER;
+pthread_cond_t  cond_sched = PTHREAD_COND_INITIALIZER;
 
 shared_mem *my_sharedm;
 
@@ -62,6 +66,8 @@ int fd;
 int shmid;
 struct task *num_tasks;
 
+
+task t2;
 FILE *log_file;
 FILE *config_file;
 
@@ -106,7 +112,12 @@ void reavaliar_prioridade(){ //TASK MANAGER
     printf("reavaliating priority\n");
     int prioridade = 1;
     int length = sizeof(&num_tasks) / sizeof(task);
-
+    
+    printf("before reavaliating\n");
+    for(int i = 0 ; i < length ; i++){
+    	printf("MAX TIME %f , PRIORITY %d ||",num_tasks[i].temp_max , num_tasks[i].prioridade);
+    }
+	printf("\n");
     for(int i = 0 ; i < length ; i++){
 
         prioridade = 1;
@@ -130,14 +141,19 @@ void reavaliar_prioridade(){ //TASK MANAGER
 
         num_tasks[i].prioridade = prioridade;
     }
-
+	
+	printf("After reavaliating\n");
+	for(int i = 0 ; i < length ; i++){
+    	printf("TASK ID %f , PRIORITY %d ||",num_tasks[i].temp_max , num_tasks[i].prioridade);
+    }
+	printf("\n");
 }
 
 
 
 void add_task(task added_task){ //TASK MANAGER
 
-    int index = sizeof(&num_tasks) / sizeof(task);
+    int index = sizeof(&num_tasks) / sizeof(task); //ta mal a determinação da length , secalhar usamos indice global para determinar.
     int queuepos = atoi(queue_pos);
     int maxwait = atoi(max_wait);
     int full = 0;
@@ -151,6 +167,8 @@ void add_task(task added_task){ //TASK MANAGER
 
     if(full == 0){
         num_tasks[index] = added_task;
+    	printf("%d\n" , num_tasks[index].id); 
+    	printf("%d\n" , index);
 
         /*if(queuepos * 0.8 <= index+1){
             if(tempmin > maxwait) { //Perguntar o que e o temp_min! , capaz de ter de ser feito no monitor....
@@ -227,6 +245,23 @@ void *vcpu(void *u){
 }
 
 
+void le_pipe(){
+
+    if ((fd = open(PIPE_NAME, O_RDONLY)) < 0) {
+        write_file("Error oppening pipe for reading.\n");
+        exit(0);
+    }
+    
+
+    if(read(fd, &t2, sizeof(task)) == -1)
+    	printf("Erro a ler.");
+    	
+    t2.time = clock();
+    
+    
+}
+    
+
 int read_file() {
     char num_edge_servers[20];
     int num_servers;
@@ -271,21 +306,13 @@ int read_file() {
 
 void * thread_scheduler(void *x){
 
-	if ((fd = open(PIPE_NAME, O_RDONLY)) < 0) {
-        write_file("Error oppening pipe for reading.\n");
-        exit(0);
-    }
-    
-    task t2;
     while(1){
-        read(fd, &t2, sizeof(task)); //fazer aqui uma função para ler e esperar pelo signal dela para continuar.
-
-        t2.time = clock();
+    
+		le_pipe();
 
         printf("task %d just arrived\n" , t2.id);
         add_task(t2);
-        //esperar mensagem do pipe.
-        //criar a task com os valores recebidos.;
+
     }
 
 }
@@ -350,9 +377,9 @@ void task_manager() { //TASK MANAGER
     edge_servers = read_file();
     queuepos = atoi(queue_pos);
     num_tasks = malloc(queuepos * sizeof(task));
-
+    
     pthread_create(&thread_sched, NULL, thread_scheduler, (void *) &id_scheduler);
-
+	
 
     for (int i = 0 ; i < edge_servers ; i++) {
 
