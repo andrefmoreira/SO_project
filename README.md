@@ -13,7 +13,7 @@ SYSTEM MANAGER:
 - Arranque do simulador de offloading, leitura do ficheiro de configurações,
 validação dos dados do ficheiro e aplicação das configurações lidas            *DONE*
 - Criação da memória partilhada          *DONE*
-- Criação do named pipe
+- Criação do named pipe                   *DONE*
 - Criação dos processos Task Manager, Monitor e Maintenance Manager             *DONE*
 - Criação da fila de mensagens
 - Escrever a informação estatística no ecrã como resposta ao sinal SIGTSTP
