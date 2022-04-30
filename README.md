@@ -5,7 +5,7 @@
 MOBILE NODES:
 - Criação do mobile node    *DONE*
 - Leitura correta dos parâmetros da linha de comando     *DONE*
-- Geração e escrita das tarefas no named pipe
+- Geração e escrita das tarefas no named pipe          *DONE*
 
 
 
