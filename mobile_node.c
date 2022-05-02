@@ -74,12 +74,13 @@ int main(int argc, char *argv[]) {
     int interval_micro = interval * 1000;
 
     char *string = NULL;
-    sprintf(string, "%d %d %lf %d %lf", num_requests, interval, t.temp_max , t.priority, t.time);
+    sprintf(string, "%d %d %lf %d %lf", num_requests, t.num_instr, t.temp_max , t.priority, t.time);
 
     for (int i = 0 ; i < num_requests ; i++) {
         t.id = i;
-        write(fd, &t, sizeof(task));
-		printf("task %d enviada.\n",i);
+        sprintf(string, "%d %d %lf %d %lf", t.id, interval, t.temp_max , t.priority, t.time);
+        write(fd, &string, sizeof(string));
+		printf("Task %d sent sucessfully.\n", i);
         usleep(interval_micro);
     }
 
