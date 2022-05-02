@@ -442,6 +442,7 @@ void maintenance_manager() {
 
 void end(){
 
+    char * frase;
     write_file("Signal SIGINT received ... waiting for last tasks to close simulator.");
     fim = 1;
     unlink(PIPE_NAME);
@@ -449,13 +450,16 @@ void end(){
     write_file("Tasks that were not completed: \n");
 
     for(int i = 0; i < length ; i++){
-        write_file("Task ID: %d, Task Priority: %d\n", num_tasks[i].id , num_tasks[i].priority);
+        sprintf(frase, "Task ID: %d, Task Priority: %d\n", num_tasks[i].id , num_tasks[i].priority);
+        write_file(frase);
     }
 
 
     write_file("%s:Simulator closed.\n");
     pthread_mutex_destroy(&mutex);    //falta por todos os que usamos aqui.
     pthread_mutex_destroy(&mutex_log);
+    free(frase);
+    free(num_tasks);
 
     exit(0);
 }
@@ -463,14 +467,17 @@ void end(){
 void stats(){
     write_file("Tasks executed: %d \n" , tasks_executed);
 
+    char * string;
     double average_time = 0;
     average_time = tempo_total / tasks_executed;
-
-    write_file("Average response time: %d \n", average_time);
+    sprintf(string, "Average response time: %d \n", average_time);
+    write_file(string);
 
     //FALTA COISAS AQUI
+    sprintf(string, "Number of tasks that have not been executed: %d \n" , lenght);
+    write_file(string);
 
-    write_file("Number of tasks that have not been executed: %d \n" , lenght);
+    free(string);
 }
 
 
@@ -530,6 +537,12 @@ int main() {
         maintenance_manager();
         exit(0);
     }
+
+    while ((wait(&status)) > 0);
+    
+    write_file("%s:Simulator closed.\n");
+    pthread_mutex_destroy(&mutex);
+    pthread_mutex_destroy(&mutex_log);
 
     return 0;
 }
