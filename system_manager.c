@@ -26,7 +26,7 @@ typedef struct task {
     int id;
     int num_instr;
     double temp_max;
-    int prioridade;
+    int priority;
     double time;
 } task;
 
@@ -58,10 +58,12 @@ char s[64];
 char queue_pos[20];
 char max_wait[20];
 char edge_server_name[64];
+char text_pipe[32];
+int queuepos;
 int fd;
 int shmid;
 int length = 0;
-int fim = 0;
+int end = 0;
 int tasks_executed = 0;
 double tempo_total = 0;
 struct task *num_tasks;
@@ -87,13 +89,12 @@ void write_file(char string[]){
 
 void delete_task(int indice ){ //TASK MANAGER
 
-    int queuepos = atoi(queue_pos);
-    int prioridade_task = num_tasks[indice].prioridade;
+    int task_priority = num_tasks[indice].priority;
 
     for (int i = length; i < length -1; i++)
     {   
-        if(prioridade_task < num_tasks[i+1].prioridade)
-            num_tasks[i].prioridade--;
+        if(task_priority < num_tasks[i+1].priority)
+            num_tasks[i].priority--;
 
         num_tasks[i] = num_tasks[i+1]; // assign arr[i+1] to arr[i]
     }
@@ -104,24 +105,24 @@ void reavaliar_prioridade(){ //TASK MANAGER
 
 
     printf("reavaliating priority\n");
-    int prioridade = 1;
+    int priority = 1;
     
     printf("before reavaliating\n");
     for(int i = 0 ; i < length ; i++){
-    	printf("MAX TIME %f , PRIORITY %d ||",num_tasks[i].temp_max , num_tasks[i].prioridade);
+    	printf("MAX TIME %f , PRIORITY %d ||",num_tasks[i].temp_max , num_tasks[i].priority);
     }
 	printf("\n");
     for(int i = 0 ; i < length ; i++){
 
-        prioridade = 1;
+        priority = 1;
 
         for(int x = 0 ; x < length ; x++){
             if(num_tasks[i].temp_max > num_tasks[x].temp_max)
-                prioridade++;
+                priority++;
             else if(num_tasks[i].temp_max == num_tasks[x].temp_max){
                 //tem o mesmo tempo maximo mas a task atual foi inserida depois da task a que esta a comparar.
                 if(i > x)
-                    prioridade++;
+                    priority++;
 
             }
         }
@@ -132,12 +133,12 @@ void reavaliar_prioridade(){ //TASK MANAGER
             delete_task(i);
         }
 
-        num_tasks[i].prioridade = prioridade;
+        num_tasks[i].priority = priority;
     }
 	
 	printf("After reavaliating\n");
 	for(int i = 0 ; i < length ; i++){
-    	printf("TASK ID %f , PRIORITY %d ||",num_tasks[i].temp_max , num_tasks[i].prioridade);
+    	printf("TASK ID %f , PRIORITY %d ||",num_tasks[i].temp_max , num_tasks[i].priority);
     }
 	printf("\n");
 }
@@ -146,7 +147,6 @@ void reavaliar_prioridade(){ //TASK MANAGER
 
 void add_task(task added_task){ //TASK MANAGER
 
-    int queuepos = atoi(queue_pos);
     int maxwait = atoi(max_wait);
     int full = 0;
 
@@ -177,12 +177,12 @@ void *vcpu(void *u){
         int id = *((int*)u);
 
         //determinar o tempo que demora, se for menor que o tempo maximo da task removemos a task.
-        //realizar a task que tem prioridade 1
+        //realizar a task que tem priority 1
         double time = 0;
         int atual_task = 0;
 
         for(int i = 0 ; i < length ; i++){   // a task vai ser enviada por isso tiramos isto depois
-            if(num_tasks[i].prioridade == 1){
+            if(num_tasks[i].priority == 1){
                 atual_task = i;
                 break;
             }
@@ -230,12 +230,12 @@ void *vcpu(void *u){
             reavaliar_prioridade();
 
         }
-    }while(fim == 0);
+    }while(end == 0);
     pthread_exit(NULL);
 }
 
 
-void le_pipe(){
+void read_pipe(){
 
     if ((fd = open(PIPE_NAME, O_RDONLY)) < 0) {
         write_file("Error oppening pipe for reading.\n");
@@ -243,10 +243,17 @@ void le_pipe(){
     }
     
 
-    if(read(fd, &t2, sizeof(task)) == -1)
-    	printf("Erro a ler.");
-    	
-    t2.time = clock();
+    if(read(fd, &text_pipe, sizeof(text_pipe)) == -1)
+    	write_file("Error reading pipe.\n");
+    
+    if(strcmp(text_pipe , "EXIT") == 0)
+        end();
+    else if(strcmp(text_pipe , "STATS") == 0)
+        stats();
+    else{
+        sscanf(text_pipe,"%d %d %lf %d %lf" , t2.id , t2.num_instr , t2.temp_max , t2.priority , t2.time);
+        t2.time = clock();
+    }
     
     
 }
@@ -302,12 +309,12 @@ void * thread_scheduler(void *x){
 
     do{
     
-		le_pipe();
+		read_pipe();
 
         printf("task %d just arrived\n" , t2.id);
         add_task(t2); //esta a enviar a ultima task 2 vezes
 
-    }while(fim == 0);
+    }while(end == 0);
 
 }
 
@@ -318,12 +325,12 @@ void edge_server() {
     // Criar o segmento de memória partilhada
     if ((shmid = shmget(IPC_PRIVATE, sizeof(shared_mem), IPC_CREAT | 0777)) < 0){
         write_file("%s:Error on shmget function!\n");
-        exit(1);
+        exit(-1);
     }
 
     if ((my_sharedm = shmat(shmid, NULL, 0)) == (shared_mem *) -1) {
         write_file("%s:Error on shmat function!\n");
-        exit(1);
+        exit(-1);
     }
 
     //informar ao maintenance managers que esta ativo.
@@ -364,7 +371,6 @@ void task_manager() { //TASK MANAGER
     int edge_servers;
     char line[64];
     char *tokens;
-    int queuepos;
     int id_scheduler = 1;
     pthread_t thread_sched;
 
@@ -379,7 +385,7 @@ void task_manager() { //TASK MANAGER
 
         if (fscanf(config_file , "%s" , line) != 1) {
             write_file("%s:Error reading file!\n");
-            exit(1);
+            exit(-1);
         }
 
         tokens = strtok(line, ",");
@@ -397,11 +403,11 @@ void task_manager() { //TASK MANAGER
 
         if(my_sharedm->capac_proc1 == 0){
             write_file("%s:Error converting to int!\n");
-            exit(1);
+            exit(-1);
         }
         if(my_sharedm->capac_proc2 == 0){
             write_file("%s:Error converting to int!\n");
-            exit(1);
+            exit(-1);
         }
 
         if(fork() == 0) {
@@ -418,7 +424,6 @@ void task_manager() { //TASK MANAGER
 
 
 void monitor() {
-    int queuepos = atoi(queue_pos);
 
     do{
         if(queuepos * 0.8 <= length){
@@ -432,7 +437,7 @@ void monitor() {
                 my_sharedm->nivel_perf = 0;
             }
         }
-    }while(fim == 0);
+    }while(end == 0);
 }
 
 
@@ -443,36 +448,37 @@ void maintenance_manager() {
 
 void end(){
 
-    char * frase;
+    char * phrase = NULL;
     write_file("Signal SIGINT received ... waiting for last tasks to close simulator.");
-    fim = 1;
+    end = 1;
     unlink(PIPE_NAME);
     
     write_file("Tasks that were not completed: \n");
 
     for(int i = 0; i < length ; i++){
-        sprintf(frase, "Task ID: %d, Task Priority: %d\n", num_tasks[i].id , num_tasks[i].prioridade);
-        write_file(frase);
+        sprintf(phrase, "Task ID: %d, Task Priority: %d\n", num_tasks[i].id , num_tasks[i].priority);
+        write_file(phrase);
     }
 
-
     write_file("%s:Simulator closed.\n");
+
     pthread_mutex_destroy(&mutex);    //falta por todos os que usamos aqui.
     pthread_mutex_destroy(&mutex_log);
-    free(frase);
+    free(phrase);
     free(num_tasks);
 
     exit(0);
 }
 
 void stats(){
-    char *frase;
+    char *phrase = NULL;
 
-    sprintf(frase, "Tasks executed: %d \n" , tasks_executed);
-    write_file(frase);
+    sprintf(phrase, "Tasks executed: %d \n" , tasks_executed);
+    write_file(phrase);
 
-    char * string;
+    char * string = NULL;
     double average_time = 0;
+
     average_time = tempo_total / tasks_executed;
     sprintf(string, "Average response time: %d \n", average_time);
     write_file(string);
@@ -499,19 +505,19 @@ int main() {
         // Criar o segmento de memória partilhada
     if ((shmid = shmget(IPC_PRIVATE, sizeof(shared_mem), IPC_CREAT | 0777)) < 0){
         write_file("%s:Error on shmget function!\n");
-        exit(1);
+        exit(-1);
     }
 
     if ((my_sharedm = shmat(shmid, NULL, 0)) == (shared_mem *) -1) {
         write_file("%s:Error on shmat function!\n");
-        exit(1);
+        exit(-1);
     }
 
 
 
     if (mkfifo(PIPE_NAME, O_CREAT|O_EXCL|0600)<0 && (errno!= EEXIST)) {
         write_file("Error creating pipe.\n");
-        exit(0);
+        exit(-1);
     }
 
 
