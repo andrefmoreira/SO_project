@@ -168,20 +168,20 @@ void add_task(task added_task){ //TASK MANAGER
 
 }
 
-
+//TEMOS DE SEPARAR EM VCPU_MIN E VCPU_MAX PARA SER MAIS FACIL
 void *vcpu(void *u){
 
     do{
         //pthread_cond_wait(&tarefa) fazer aqui uma variavel de condiçao ate receber a tarefa pelo unamed pipe.
         int capac_proc;
         int id = *((int*)u);
-        int array_size = sizeof(&num_tasks) / sizeof(task);
+
         //determinar o tempo que demora, se for menor que o tempo maximo da task removemos a task.
         //realizar a task que tem prioridade 1
         double time = 0;
         int atual_task = 0;
 
-        for(int i = 0 ; i < array_size-1 ; i++){
+        for(int i = 0 ; i < length ; i++){   // a task vai ser enviada por isso tiramos isto depois
             if(num_tasks[i].prioridade == 1){
                 atual_task = i;
                 break;
@@ -194,7 +194,7 @@ void *vcpu(void *u){
             else
                 capac_proc = my_sharedm->capac_proc1;
         }
-
+        //ESTA PARTE TAMBEM VAI SER REMOVIDA
         if(my_sharedm->nivel_perf == 1){
             if(id == 1)
                 capac_proc = my_sharedm->capac_proc2;
@@ -291,6 +291,10 @@ int read_file() {
     }
 
     return num_servers;
+}
+
+void * thread_dispatcher{
+
 }
 
 
@@ -526,6 +530,12 @@ int main() {
         maintenance_manager();
         exit(0);
     }
+
+    while ((wait(&status)) > 0);
+    
+    write_file("%s:Simulator closed.\n");
+    pthread_mutex_destroy(&mutex);
+    pthread_mutex_destroy(&mutex_log);
 
     return 0;
 }
