@@ -293,7 +293,7 @@ int read_file() {
     return num_servers;
 }
 
-void * thread_dispatcher{
+void * thread_dispatcher() {
 
 }
 
@@ -417,13 +417,14 @@ void task_manager() { //TASK MANAGER
 }
 
 
-void monitor() 
-{
+void monitor() {
+    queuepos = atoi(queue_pos);
+
     do{
-        if(queuepos * 0.8 <= lenght){
-            if(tempmin > maxwait) { //falta o tempmin...
+        if(queuepos * 0.8 <= length){
+            /*if(tempmin > max_wait) { //falta o tempmin...
                 my_sharedm->nivel_perf = 1;
-            }
+            }*/
         }
 
         if(my_sharedm->nivel_perf == 1){
@@ -450,7 +451,7 @@ void end(){
     write_file("Tasks that were not completed: \n");
 
     for(int i = 0; i < length ; i++){
-        sprintf(frase, "Task ID: %d, Task Priority: %d\n", num_tasks[i].id , num_tasks[i].priority);
+        sprintf(frase, "Task ID: %d, Task Priority: %d\n", num_tasks[i].id , num_tasks[i].prioridade);
         write_file(frase);
     }
 
@@ -465,7 +466,10 @@ void end(){
 }
 
 void stats(){
-    write_file("Tasks executed: %d \n" , tasks_executed);
+    char *frase;
+
+    sprintf(frase, "Tasks executed: %d \n" , tasks_executed);
+    write_file(frase);
 
     char * string;
     double average_time = 0;
@@ -474,7 +478,7 @@ void stats(){
     write_file(string);
 
     //FALTA COISAS AQUI
-    sprintf(string, "Number of tasks that have not been executed: %d \n" , lenght);
+    sprintf(string, "Number of tasks that have not been executed: %d \n" , length);
     write_file(string);
 
     free(string);
