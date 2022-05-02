@@ -418,7 +418,7 @@ void task_manager() { //TASK MANAGER
 
 
 void monitor() {
-    queuepos = atoi(queue_pos);
+    int queuepos = atoi(queue_pos);
 
     do{
         if(queuepos * 0.8 <= length){
