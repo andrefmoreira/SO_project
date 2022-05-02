@@ -61,6 +61,9 @@ char edge_server_name[64];
 int fd;
 int shmid;
 int length = 0;
+int fim = 0;
+int tasks_executed = 0;
+double tempo_total = 0;
 struct task *num_tasks;
 
 
@@ -95,12 +98,6 @@ void delete_task(int indice ){ //TASK MANAGER
         num_tasks[i] = num_tasks[i+1]; // assign arr[i+1] to arr[i]
     }
     length--;
-
-    /*if(my_sharedm->nivel_perf == 1){
-        if(queuepos * 0.2 >= length){ //capaz de ter de ser feito no monitor....
-            my_sharedm->nivel_perf = 0;
-        }
-    }*/
 }
 
 void reavaliar_prioridade(){ //TASK MANAGER
@@ -165,11 +162,6 @@ void add_task(task added_task){ //TASK MANAGER
     	printf("%d\n" , num_tasks[length].id); 
     	printf("%d\n" , length);
 
-        /*if(queuepos * 0.8 <= index+1){
-            if(tempmin > maxwait) { //Perguntar o que e o temp_min! , capaz de ter de ser feito no monitor....
-                my_sharedm->nivel_perf = 1;
-            }
-        }*/
         length++;
         reavaliar_prioridade();
     }
@@ -179,63 +171,66 @@ void add_task(task added_task){ //TASK MANAGER
 
 void *vcpu(void *u){
 
-    //vamos fazer um while ate nao ter mais tarefas.
+    do{
+        //pthread_cond_wait(&tarefa) fazer aqui uma variavel de condiçao ate receber a tarefa pelo unamed pipe.
+        int capac_proc;
+        int id = *((int*)u);
+        int array_size = sizeof(&num_tasks) / sizeof(task);
+        //determinar o tempo que demora, se for menor que o tempo maximo da task removemos a task.
+        //realizar a task que tem prioridade 1
+        double time = 0;
+        int atual_task = 0;
 
-    int capac_proc;
-    int id = *((int*)u);
-    int array_size = sizeof(&num_tasks) / sizeof(task);
-    //determinar o tempo que demora, se for menor que o tempo maximo da task removemos a task.
-    //realizar a task que tem prioridade 1
-    double time = 0;
-    int atual_task = 0;
-
-    for(int i = 0 ; i < array_size-1 ; i++){
-        if(num_tasks[i].prioridade == 1){
-            atual_task = i;
-            break;
+        for(int i = 0 ; i < array_size-1 ; i++){
+            if(num_tasks[i].prioridade == 1){
+                atual_task = i;
+                break;
+            }
         }
-    }
 
-    if(my_sharedm->nivel_perf == 0){
-        if(my_sharedm->capac_proc1 > my_sharedm->capac_proc2)
-            capac_proc = my_sharedm->capac_proc2;
-        else
-            capac_proc = my_sharedm->capac_proc1;
-    }
+        if(my_sharedm->nivel_perf == 0){
+            if(my_sharedm->capac_proc1 > my_sharedm->capac_proc2)
+                capac_proc = my_sharedm->capac_proc2;
+            else
+                capac_proc = my_sharedm->capac_proc1;
+        }
 
-    if(my_sharedm->nivel_perf == 1){
-        if(id == 1)
-            capac_proc = my_sharedm->capac_proc2;
-        else
-            capac_proc = my_sharedm->capac_proc1;
-    }
+        if(my_sharedm->nivel_perf == 1){
+            if(id == 1)
+                capac_proc = my_sharedm->capac_proc2;
+            else
+                capac_proc = my_sharedm->capac_proc1;
+        }
 
-    //tempo minimo e o tempo que num momento T o vcpu demora a ficar livre, ou seja vcpu ta ocupado, no melhor dos casos no momento T+X o vcpu esta livre, ou seja temp min = X.
+        //tempo minimo e o tempo que num momento T o vcpu demora a ficar livre, ou seja vcpu ta ocupado, no melhor dos casos no momento T+X o vcpu esta livre, ou seja temp min = X.
 
-    time = ((double)num_tasks[atual_task].num_instr * 1000) / (capac_proc * 1000000);
-    num_tasks[atual_task].time = clock() - num_tasks[atual_task].time;
-    time = time + num_tasks[atual_task].time;
+        time = ((double)num_tasks[atual_task].num_instr * 1000) / (capac_proc * 1000000);
+        num_tasks[atual_task].time = clock() - num_tasks[atual_task].time;
+        time = time + num_tasks[atual_task].time;
 
-    if(time <= num_tasks[atual_task].temp_max){
-        pthread_mutex_lock(&mutex);
+        if(time <= num_tasks[atual_task].temp_max){
+            pthread_mutex_lock(&mutex);
 
-        //codigo do vcpu
+            //codigo do vcpu
 
-        pthread_mutex_unlock(&mutex);
-        //sempre que acaba uma tarefa esta livre e vai chamar o thread dispatcher.
+            pthread_mutex_unlock(&mutex);
+            //sempre que acaba uma tarefa esta livre e vai chamar o thread dispatcher.
 
-        pthread_mutex_lock(&mutex);
-        pthread_cond_signal(&cond_var);
-        pthread_mutex_unlock(&mutex);
-        //perguntar como e que identificamos qual vcpu esta livre.
-        write_file("Task finished successfully.\n");
-    }
-    else {
-        write_file("Task doesn't meet the time limit! Removing task...\n");
-        delete_task(atual_task);
-        reavaliar_prioridade();
+            pthread_mutex_lock(&mutex);
+            pthread_cond_signal(&cond_var);
+            pthread_mutex_unlock(&mutex);
+            //perguntar como e que identificamos qual vcpu esta livre.
+            write_file("Task finished successfully.\n");
+            tasks_executed++;
+            tempo_total += time;
+        }
+        else {
+            write_file("Task doesn't meet the time limit! Removing task...\n");
+            delete_task(atual_task);
+            reavaliar_prioridade();
 
-    }
+        }
+    }while(fim == 0);
     pthread_exit(NULL);
 }
 
@@ -301,14 +296,14 @@ int read_file() {
 
 void * thread_scheduler(void *x){
 
-    while(1){
+    do{
     
 		le_pipe();
 
         printf("task %d just arrived\n" , t2.id);
         add_task(t2); //esta a enviar a ultima task 2 vezes
 
-    }
+    }while(fim == 0);
 
 }
 
@@ -418,8 +413,21 @@ void task_manager() { //TASK MANAGER
 }
 
 
-void monitor() {
+void monitor() 
+{
+    do{
+        if(queuepos * 0.8 <= lenght){
+            if(tempmin > maxwait) { //falta o tempmin...
+                my_sharedm->nivel_perf = 1;
+            }
+        }
 
+        if(my_sharedm->nivel_perf == 1){
+            if(queuepos * 0.2 >= length){
+                my_sharedm->nivel_perf = 0;
+            }
+        }
+    }while(fim == 0);
 }
 
 
@@ -428,9 +436,47 @@ void maintenance_manager() {
 }
 
 
+void end(){
+
+    write_file("Signal SIGINT received ... waiting for last tasks to close simulator.");
+    fim = 1;
+    unlink(PIPE_NAME);
+    
+    write_file("Tasks that were not completed: \n");
+
+    for(int i = 0; i < length ; i++){
+        write_file("Task ID: %d, Task Priority: %d\n", num_tasks[i].id , num_tasks[i].priority);
+    }
+
+
+    write_file("%s:Simulator closed.\n");
+    pthread_mutex_destroy(&mutex);    //falta por todos os que usamos aqui.
+    pthread_mutex_destroy(&mutex_log);
+
+    exit(0);
+}
+
+void stats(){
+    write_file("Tasks executed: %d \n" , tasks_executed);
+
+    double average_time = 0;
+    average_time = tempo_total / tasks_executed;
+
+    write_file("Average response time: %d \n", average_time);
+
+    //FALTA COISAS AQUI
+
+    write_file("Number of tasks that have not been executed: %d \n" , lenght);
+}
+
+
 int main() {
 
     int status = 0;
+
+    signal(SIGINT, end);
+    signal(SIGTSTP, stats);
+
 
     log_file  = fopen("log_file.txt", "w");
     fclose(log_file);
@@ -483,7 +529,6 @@ int main() {
 
     while ((wait(&status)) > 0);
     
-	
     write_file("%s:Simulator closed.\n");
     pthread_mutex_destroy(&mutex);
     pthread_mutex_destroy(&mutex_log);
