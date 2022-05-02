@@ -58,7 +58,7 @@ char s[64];
 char queue_pos[20];
 char max_wait[20];
 char edge_server_name[64];
-char text_pipe[32];
+char text_pipe[128];
 int queuepos;
 int fd;
 int shmid;
@@ -99,7 +99,7 @@ void delete_task(int indice ){ //TASK MANAGER
 
     int task_priority = num_tasks[indice].priority;
 
-    for (int i = length; i < length -1; i++)
+    for (int i = 0; i < length-1; i++)
     {   
         if(task_priority < num_tasks[i+1].priority)
             num_tasks[i].priority--;
@@ -249,10 +249,9 @@ void finish(){
     char phrase[64];
     write_file("\n%s:Signal SIGINT received ... waiting for last tasks to close simulator.\n");
     end = 1;
-    printf("\nOLA");
-    unlink(PIPE_NAME);
     
     while ((wait(&status1)) > 0);
+    unlink(PIPE_NAME);
     
     write_file("%s:Tasks that were not completed: \n");
 
@@ -271,9 +270,12 @@ void finish(){
 }
 
 void stats(){
+
+	//precisamos de enviar o length , tempo_total , tasks_executed por um pipe para aqui.
+	//ou entao por numa shared memory separada, temos de pensar nisto.
     char phrase[64];
     
-	write_file("%\ns:Signal SIGTSTP received ... showing stats! \n");
+	write_file("\n%s:Signal SIGTSTP received ... showing stats! \n");
 	
     sprintf(phrase, "Tasks executed: %d \n" , tasks_executed);
     write_file(phrase);
@@ -294,14 +296,7 @@ void stats(){
 
 
 void read_pipe(){
-	
-	printf("ola\n");
-
-    if ((fd = open(PIPE_NAME, O_RDWR)) < 0) {
-        write_file("Error oppening pipe for reading.\n");
-        exit(0);
-    }
-    
+	    
     if(read(fd, &text_pipe, sizeof(text_pipe)) == -1)
     	write_file("Error reading pipe.\n");
    
@@ -367,13 +362,19 @@ pthread_exit(NULL);
 
 
 void * thread_scheduler(void *x){
+	
+	if ((fd = open(PIPE_NAME, O_RDWR)) < 0) {
+        write_file("Error oppening pipe for reading.\n");
+        exit(0);
+    }
+	
 
     while(end == 0){
     
 		read_pipe();
 
         printf("task %d just arrived\n" , t2.id);
-        add_task(t2); //esta a enviar a ultima task 2 vezes
+        add_task(t2);
 
     }
     
@@ -554,7 +555,6 @@ int main() {
         write_file("%s:Process Monitor created.\n");
 
         monitor();
-        printf("sai2");
         exit(0);
     }
     
@@ -562,7 +562,6 @@ int main() {
         write_file("%s:Process Task Manager created.\n");
         
         task_manager();
-        printf("sai");
         exit(0);
     }
 
@@ -571,7 +570,6 @@ int main() {
         write_file("%s:Process Maintenance Manager created.\n");
 		
         maintenance_manager();
-        printf("sai1");
         exit(0);
     }
 
