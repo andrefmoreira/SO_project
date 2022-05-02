@@ -527,11 +527,5 @@ int main() {
         exit(0);
     }
 
-    while ((wait(&status)) > 0);
-    
-    write_file("%s:Simulator closed.\n");
-    pthread_mutex_destroy(&mutex);
-    pthread_mutex_destroy(&mutex_log);
-
     return 0;
 }
