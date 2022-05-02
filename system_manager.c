@@ -73,6 +73,8 @@ task t2;
 FILE *log_file;
 FILE *config_file;
 
+
+
 void write_file(char string[]){
 
     log_file  = fopen("log_file.txt", "a");
@@ -86,6 +88,12 @@ void write_file(char string[]){
     fclose(log_file);
 }
 
+void ignore_signal(){
+
+    signal(SIGINT, SIG_IGN);
+    signal(SIGTSTP, SIG_IGN);
+
+}
 
 void delete_task(int indice ){ //TASK MANAGER
 
@@ -129,7 +137,7 @@ void reavaliar_prioridade(){ //TASK MANAGER
         num_tasks[i].time = clock() - num_tasks[i].time;
 
         if(num_tasks[i].time > num_tasks[i].temp_max){
-            write_file("Max time has passed! Removing task...\n");
+            write_file("%s:Max time has passed! Removing task...\n");
             delete_task(i);
         }
 
@@ -153,7 +161,7 @@ void add_task(task added_task){ //TASK MANAGER
     printf("Adding task %d\n" , added_task.id);
 
     if(length == queuepos){
-        write_file("Queue full! Removing task...\n");
+        write_file("%s:Queue full! Removing task...\n");
         full = -1;
     }
 
@@ -171,7 +179,7 @@ void add_task(task added_task){ //TASK MANAGER
 //TEMOS DE SEPARAR EM VCPU_MIN E VCPU_MAX PARA SER MAIS FACIL
 void *vcpu(void *u){
 
-    do{
+    while(end == 0){
         //pthread_cond_wait(&tarefa) fazer aqui uma variavel de condiçao ate receber a tarefa pelo unamed pipe.
         int capac_proc;
         int id = *((int*)u);
@@ -220,38 +228,89 @@ void *vcpu(void *u){
             pthread_cond_signal(&cond_var);
             pthread_mutex_unlock(&mutex);
             //perguntar como e que identificamos qual vcpu esta livre.
-            write_file("Task finished successfully.\n");
+            write_file("%s:Task finished successfully.\n");
             tasks_executed++;
             tempo_total += time;
         }
         else {
-            write_file("Task doesn't meet the time limit! Removing task...\n");
+            write_file("%s:Task doesn't meet the time limit! Removing task...\n");
             delete_task(atual_task);
             reavaliar_prioridade();
 
         }
-    }while(end == 0);
+    }
     pthread_exit(NULL);
 }
 
 
-void read_pipe(){
+void finish(){
 
-    if ((fd = open(PIPE_NAME, O_RDONLY)) < 0) {
+	int status1 = 0;
+    char phrase[64];
+    write_file("\n%s:Signal SIGINT received ... waiting for last tasks to close simulator.\n");
+    end = 1;
+    printf("\nOLA");
+    unlink(PIPE_NAME);
+    
+    while ((wait(&status1)) > 0);
+    
+    write_file("%s:Tasks that were not completed: \n");
+
+    for(int i = 0; i < length ; i++){
+        sprintf(phrase, "Task ID: %d, Task Priority: %d\n", num_tasks[i].id , num_tasks[i].priority);
+        write_file(phrase);
+    }
+
+    write_file("%s:Simulator closed.\n");
+
+    pthread_mutex_destroy(&mutex);    //falta por todos os que usamos aqui.
+    pthread_mutex_destroy(&mutex_log);
+    free(num_tasks);
+	
+    exit(0);
+}
+
+void stats(){
+    char phrase[64];
+    
+	write_file("%\ns:Signal SIGTSTP received ... showing stats! \n");
+	
+    sprintf(phrase, "Tasks executed: %d \n" , tasks_executed);
+    write_file(phrase);
+
+    char string[64];
+    double average_time = 0;
+
+    average_time = tempo_total / tasks_executed;
+    sprintf(string, "Average response time: %lf \n", average_time);
+    write_file(string);
+
+    //FALTA COISAS AQUI
+    sprintf(string, "Number of tasks that have not been executed: %d \n" , length);
+    write_file(string);
+
+}
+
+
+
+void read_pipe(){
+	
+	printf("ola\n");
+
+    if ((fd = open(PIPE_NAME, O_RDWR)) < 0) {
         write_file("Error oppening pipe for reading.\n");
         exit(0);
     }
     
-
     if(read(fd, &text_pipe, sizeof(text_pipe)) == -1)
     	write_file("Error reading pipe.\n");
-    
+   
     if(strcmp(text_pipe , "EXIT") == 0)
-        end();
+        finish();
     else if(strcmp(text_pipe , "STATS") == 0)
         stats();
     else{
-        sscanf(text_pipe,"%d %d %lf %d %lf" , t2.id , t2.num_instr , t2.temp_max , t2.priority , t2.time);
+        sscanf(text_pipe,"%d %d %lf %d %lf" , &t2.id , &t2.num_instr , &t2.temp_max , &t2.priority , &t2.time);
         t2.time = clock();
     }
     
@@ -302,25 +361,30 @@ int read_file() {
 
 void * thread_dispatcher() {
 
+pthread_exit(NULL);
+
 }
 
 
 void * thread_scheduler(void *x){
 
-    do{
+    while(end == 0){
     
 		read_pipe();
 
         printf("task %d just arrived\n" , t2.id);
         add_task(t2); //esta a enviar a ultima task 2 vezes
 
-    }while(end == 0);
-
+    }
+    
+	pthread_exit(NULL);
 }
 
 
 
 void edge_server() {
+		
+	ignore_signal();
 
     // Criar o segmento de memória partilhada
     if ((shmid = shmget(IPC_PRIVATE, sizeof(shared_mem), IPC_CREAT | 0777)) < 0){
@@ -373,7 +437,9 @@ void task_manager() { //TASK MANAGER
     char *tokens;
     int id_scheduler = 1;
     pthread_t thread_sched;
-
+	
+	ignore_signal();
+	
     edge_servers = read_file();
     queuepos = atoi(queue_pos);
     num_tasks = malloc(queuepos * sizeof(task));
@@ -425,7 +491,9 @@ void task_manager() { //TASK MANAGER
 
 void monitor() {
 
-    do{
+	ignore_signal();
+
+    while(end == 0){
         if(queuepos * 0.8 <= length){
             /*if(tempmin > max_wait) { //falta o tempmin...
                 my_sharedm->nivel_perf = 1;
@@ -437,57 +505,14 @@ void monitor() {
                 my_sharedm->nivel_perf = 0;
             }
         }
-    }while(end == 0);
+    }
 }
 
 
 void maintenance_manager() {
 
-}
+ignore_signal();
 
-
-void end(){
-
-    char * phrase = NULL;
-    write_file("Signal SIGINT received ... waiting for last tasks to close simulator.");
-    end = 1;
-    unlink(PIPE_NAME);
-    
-    write_file("Tasks that were not completed: \n");
-
-    for(int i = 0; i < length ; i++){
-        sprintf(phrase, "Task ID: %d, Task Priority: %d\n", num_tasks[i].id , num_tasks[i].priority);
-        write_file(phrase);
-    }
-
-    write_file("%s:Simulator closed.\n");
-
-    pthread_mutex_destroy(&mutex);    //falta por todos os que usamos aqui.
-    pthread_mutex_destroy(&mutex_log);
-    free(phrase);
-    free(num_tasks);
-
-    exit(0);
-}
-
-void stats(){
-    char *phrase = NULL;
-
-    sprintf(phrase, "Tasks executed: %d \n" , tasks_executed);
-    write_file(phrase);
-
-    char * string = NULL;
-    double average_time = 0;
-
-    average_time = tempo_total / tasks_executed;
-    sprintf(string, "Average response time: %d \n", average_time);
-    write_file(string);
-
-    //FALTA COISAS AQUI
-    sprintf(string, "Number of tasks that have not been executed: %d \n" , length);
-    write_file(string);
-
-    free(string);
 }
 
 
@@ -495,9 +520,8 @@ int main() {
 
     int status = 0;
 
-    signal(SIGINT, end);
+    signal(SIGINT, finish);
     signal(SIGTSTP, stats);
-
 
     log_file  = fopen("log_file.txt", "w");
     fclose(log_file);
@@ -530,6 +554,7 @@ int main() {
         write_file("%s:Process Monitor created.\n");
 
         monitor();
+        printf("sai2");
         exit(0);
     }
     
@@ -537,6 +562,7 @@ int main() {
         write_file("%s:Process Task Manager created.\n");
         
         task_manager();
+        printf("sai");
         exit(0);
     }
 
@@ -545,14 +571,11 @@ int main() {
         write_file("%s:Process Maintenance Manager created.\n");
 		
         maintenance_manager();
+        printf("sai1");
         exit(0);
     }
 
     while ((wait(&status)) > 0);
-    
-    write_file("%s:Simulator closed.\n");
-    pthread_mutex_destroy(&mutex);
-    pthread_mutex_destroy(&mutex_log);
 
     return 0;
 }
