@@ -43,6 +43,8 @@ typedef struct {
     int alt_receber_tarefa; //o que e isto?
     int nivel_perf;
     int read;
+    int capac_proc1;
+    int capac_proc2; 
 } shared_mem;
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -61,6 +63,8 @@ char queue_pos[20];
 char max_wait[20];
 char text_pipe[128];
 int edge_servers = 0;
+int finish_vcpumin = 0;
+int finish_vcpumax = 0;
 int fd;
 int shmid;
 int length = 0;
@@ -178,9 +182,9 @@ void add_task(task added_task){ //TASK MANAGER
 }
 
 //TEMOS DE SEPARAR EM VCPU_MIN E VCPU_MAX PARA SER MAIS FACIL
-void *vcpu(void *u){
+void *vcpu_min(void *u){
 
-    while(end == 0){
+    while(finish_vcpumin == 0){
         //pthread_cond_wait(&tarefa) fazer aqui uma variavel de condiçao ate receber a tarefa pelo unamed pipe.
         int capac_proc;
         int id = *((int*)u);
@@ -241,6 +245,75 @@ void *vcpu(void *u){
         }
     }
     pthread_exit(NULL);
+}
+
+
+void * vcpu_max(void *m){
+
+	while(finish_vcpumax == 0){
+        //pthread_cond_wait(&tarefa) fazer aqui uma variavel de condiçao ate receber a tarefa pelo unamed pipe.
+        int capac_proc;
+        int id = *((int*)m);
+
+        //determinar o tempo que demora, se for menor que o tempo maximo da task removemos a task.
+        //realizar a task que tem priority 1
+        double time = 0;
+        int atual_task = 0;
+
+        for(int i = 0 ; i < length ; i++){   // a task vai ser enviada por isso tiramos isto depois
+            if(num_tasks[i].priority == 1){
+                atual_task = i;
+                break;
+            }
+        }
+
+        /*if(my_sharedm->nivel_perf == 0){
+            if(my_sharedm->capac_proc1 > my_sharedm->capac_proc2)
+                capac_proc = my_sharedm->capac_proc2;
+            else
+                capac_proc = my_sharedm->capac_proc1;
+        }
+        //ESTA PARTE TAMBEM VAI SER REMOVIDA
+        if(my_sharedm->nivel_perf == 1){
+            if(id == 1)
+                capac_proc = my_sharedm->capac_proc2;
+            else
+                capac_proc = my_sharedm->capac_proc1;
+        }*/
+
+        //tempo minimo e o tempo que num momento T o vcpu demora a ficar livre, ou seja vcpu ta ocupado, no melhor dos casos no momento T+X o vcpu esta livre, ou seja temp min = X.
+
+        time = ((double)num_tasks[atual_task].num_instr * 1000) / (capac_proc * 1000000);
+        num_tasks[atual_task].time = clock() - num_tasks[atual_task].time;
+        time = time + num_tasks[atual_task].time;
+
+        if(time <= num_tasks[atual_task].temp_max){
+            pthread_mutex_lock(&mutex);
+
+            //codigo do vcpu
+
+            pthread_mutex_unlock(&mutex);
+            //sempre que acaba uma tarefa esta livre e vai chamar o thread dispatcher.
+
+            pthread_mutex_lock(&mutex);
+            pthread_cond_signal(&cond_var);
+            pthread_mutex_unlock(&mutex);
+            //perguntar como e que identificamos qual vcpu esta livre.
+            write_file("%s:Task finished successfully.\n");
+            tasks_executed++;
+            tempo_total += time;
+        }
+        else {
+            write_file("%s:Task doesn't meet the time limit! Removing task...\n");
+            delete_task(atual_task);
+            reavaliar_prioridade();
+
+        }
+    }
+    pthread_exit(NULL);
+
+
+
 }
 
 
@@ -393,14 +466,14 @@ void * thread_scheduler(void *x){
 }
 
 
-
 void edge_server() {
 	
-	my_sharedm->read++;
-	
+	my_sharedm->read++;   //temos de ver como e que eles criam uma shared memory em separada para eles
+						//como são 3 edge servers nao podem guardar todos na mesma.
 	ignore_signal();
-	
-	int capac_proc1 , capac_proc2;
+
+	int id_flag = 100;
+	int troca = 0;
     //informar ao maintenance managers que esta ativo.
     char server_name[64];
     char capac1[20];
@@ -409,6 +482,7 @@ void edge_server() {
     char *tokens;
     
     pthread_mutex_lock(&mutex_conf);
+    
     //skip line that was read by another edge server.
     if(my_sharedm->read != 0){
     	for(int line = 0 ; line < my_sharedm->read ; line++){
@@ -431,15 +505,15 @@ void edge_server() {
     strcpy(capac2, tokens);
     
     
-    capac_proc1 = atoi(capac1);
-    capac_proc2 = atoi(capac2);
+    my_sharedm->capac_proc1 = atoi(capac1);
+    my_sharedm->capac_proc2 = atoi(capac2);
     
 
-    if(capac_proc1 == 0){
+    if(my_sharedm->capac_proc1 == 0){
         write_file("%s:Error converting to int!\n");
         exit(-1);
     }
-    if(capac_proc2 == 0){
+    if(my_sharedm->capac_proc2 == 0){
         write_file("%s:Error converting to int!\n");
         exit(-1);
     }
@@ -448,26 +522,39 @@ void edge_server() {
 	
     pthread_t thread_vcpu[2];
     int id[2];
-
-    //Normal performance:
-    if(my_sharedm->nivel_perf == 0) {
-        id[0] = 0;
-        pthread_create(&thread_vcpu[0], NULL, vcpu, (void *) &id[0]);
+    
+    id[0] = 0;
+    id[1] = 1;
+    //pthread_create(&thread_vcpu[0], NULL, vcpu_min , (void *) &id[0]);
+    
+    int current_flag = my_sharedm->nivel_perf;
+    
+    while(1){ //falta ler a message queue com flag para nao ser bloqueante ate recever alguma coisa.
+    
+		if(current_flag != my_sharedm->nivel_perf && troca == 0){
+			if(my_sharedm->nivel_perf != -1)
+				troca++;
+			else
+				current_flag = my_sharedm->nivel_perf; //NAO TESTEI.
+		}
+    	
+    	if(my_sharedm->nivel_perf == 1 && troca == 1){
+    	
+            pthread_create(&thread_vcpu[1], NULL, vcpu_max, (void *) &id[1]);
+            current_flag = my_sharedm->nivel_perf;
+            troca = 0;
+            
+       	}else if(my_sharedm->nivel_perf == 0 && troca == 1){
+        
+        	 pthread_join(thread_vcpu[1],NULL);
+        	 current_flag = my_sharedm->nivel_perf;
+        	 troca = 0;
+        	 
+        }	 
     }
-
-    //High performance:
-    if(my_sharedm->nivel_perf == 1){
-
-        for (int i = 0; i < 2; i++) {
-            id[i] = i;
-            pthread_create(&thread_vcpu[i], NULL, vcpu, (void *) &id[i]);
-        }
-
-        for(int i = 0; i < 2; i++) {
-            pthread_join(thread_vcpu[i],NULL);
-        }
-
-    }
+    
+    for(int n = 0 ; n < 10 ; n ++)
+    	printf("%s : %d     , %d\n", server_name, my_sharedm->capac_proc1 , my_sharedm->capac_proc2);
 }
 
 
