@@ -37,29 +37,30 @@ typedef struct task {
 
 
 typedef struct {
-    int capac_proc1;
-    int capac_proc2;
+	int queuepos;
+	int maxwait;
+	int edgeservers;
     int alt_receber_tarefa; //o que e isto?
-    int nivel_perf; 
+    int nivel_perf;
+    int read;
 } shared_mem;
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t mutex_conf = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex_log = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t  cond_var = PTHREAD_COND_INITIALIZER;
+pthread_cond_t  cond_conf = PTHREAD_COND_INITIALIZER;
 
 shared_mem *my_sharedm;
 
 time_t t;
 struct tm *tm;
 
-char capac1[20];
-char capac2[20];
 char s[64];
 char queue_pos[20];
 char max_wait[20];
-char edge_server_name[64];
 char text_pipe[128];
-int queuepos;
+int edge_servers = 0;
 int fd;
 int shmid;
 int length = 0;
@@ -160,7 +161,7 @@ void add_task(task added_task){ //TASK MANAGER
 
     printf("Adding task %d\n" , added_task.id);
 
-    if(length == queuepos){
+    if(length == my_sharedm->queuepos){
         write_file("%s:Queue full! Removing task...\n");
         full = -1;
     }
@@ -196,7 +197,7 @@ void *vcpu(void *u){
             }
         }
 
-        if(my_sharedm->nivel_perf == 0){
+        /*if(my_sharedm->nivel_perf == 0){
             if(my_sharedm->capac_proc1 > my_sharedm->capac_proc2)
                 capac_proc = my_sharedm->capac_proc2;
             else
@@ -208,7 +209,7 @@ void *vcpu(void *u){
                 capac_proc = my_sharedm->capac_proc2;
             else
                 capac_proc = my_sharedm->capac_proc1;
-        }
+        }*/
 
         //tempo minimo e o tempo que num momento T o vcpu demora a ficar livre, ou seja vcpu ta ocupado, no melhor dos casos no momento T+X o vcpu esta livre, ou seja temp min = X.
 
@@ -340,6 +341,16 @@ int read_file() {
     }
 
     num_servers = atoi(num_edge_servers);
+    
+    if(atoi(queue_pos) == 0){
+        write_file("%s:Error converting to int!\n");
+        exit(1);    
+    }
+    
+    if(atoi(max_wait) == 0){
+    	write_file("%s:Error converting to int!\n");
+        exit(1);
+    }
 
     if(num_servers == 0){
         write_file("%s:Error converting to int!\n");
@@ -384,26 +395,57 @@ void * thread_scheduler(void *x){
 
 
 void edge_server() {
-		
+	
+	my_sharedm->read++;
+	
 	ignore_signal();
-
-    // Criar o segmento de memória partilhada
-    if ((shmid = shmget(IPC_PRIVATE, sizeof(shared_mem), IPC_CREAT | 0777)) < 0){
-        write_file("%s:Error on shmget function!\n");
-        exit(-1);
-    }
-
-    if ((my_sharedm = shmat(shmid, NULL, 0)) == (shared_mem *) -1) {
-        write_file("%s:Error on shmat function!\n");
-        exit(-1);
-    }
-
+	
+	int capac_proc1 , capac_proc2;
     //informar ao maintenance managers que esta ativo.
-    int capacity1 , capacity2;
     char server_name[64];
+    char capac1[20];
+	char capac2[20];
+    char line[64];
+    char *tokens;
+    
+    pthread_mutex_lock(&mutex_conf);
+    //skip line that was read by another edge server.
+    if(my_sharedm->read != 0){
+    	for(int line = 0 ; line < my_sharedm->read ; line++){
+    		fscanf(config_file, "%*[^\n]\n");
+    	}
+    }
+    
+    if (fscanf(config_file , "%s" , line) != 1) {
+        write_file("%s:Error reading file!\n");
+        exit(-1);
+    }
 
-    strcpy(server_name ,edge_server_name);
+    tokens = strtok(line, ",");
+    strcpy(server_name, tokens);
 
+    tokens = strtok(NULL, ",");
+    strcpy(capac1, tokens);
+
+    tokens = strtok(NULL, ",");
+    strcpy(capac2, tokens);
+    
+    
+    capac_proc1 = atoi(capac1);
+    capac_proc2 = atoi(capac2);
+    
+
+    if(capac_proc1 == 0){
+        write_file("%s:Error converting to int!\n");
+        exit(-1);
+    }
+    if(capac_proc2 == 0){
+        write_file("%s:Error converting to int!\n");
+        exit(-1);
+    }
+
+    pthread_mutex_unlock(&mutex_conf);
+	
     pthread_t thread_vcpu[2];
     int id[2];
 
@@ -426,56 +468,23 @@ void edge_server() {
         }
 
     }
-
 }
 
 
 void task_manager() { //TASK MANAGER
 	
     int x = 0;
-    int edge_servers;
-    char line[64];
-    char *tokens;
     int id_scheduler = 1;
     pthread_t thread_sched;
 	
 	ignore_signal();
-	
-    edge_servers = read_file();
-    queuepos = atoi(queue_pos);
-    num_tasks = malloc(queuepos * sizeof(task));
+	my_sharedm->read = 0;
+    num_tasks = malloc(my_sharedm->queuepos * sizeof(task));
     
     pthread_create(&thread_sched, NULL, thread_scheduler, (void *) &id_scheduler);
 	
 
-    for (int i = 0 ; i < edge_servers ; i++) {
-
-        if (fscanf(config_file , "%s" , line) != 1) {
-            write_file("%s:Error reading file!\n");
-            exit(-1);
-        }
-
-        tokens = strtok(line, ",");
-        strcpy(edge_server_name, tokens);
-
-        tokens = strtok(NULL, ",");
-        strcpy(capac1, tokens);
-
-        tokens = strtok(NULL, ",");
-        strcpy(capac2, tokens);
-
-        my_sharedm->capac_proc1 = atoi(capac1);
-        my_sharedm->capac_proc2 = atoi(capac2);
-
-
-        if(my_sharedm->capac_proc1 == 0){
-            write_file("%s:Error converting to int!\n");
-            exit(-1);
-        }
-        if(my_sharedm->capac_proc2 == 0){
-            write_file("%s:Error converting to int!\n");
-            exit(-1);
-        }
+    for (int i = 0 ; i < my_sharedm->edgeservers ; i++) {
 
         if(fork() == 0) {
             write_file("%s:Process edge_server created.\n");
@@ -483,6 +492,8 @@ void task_manager() { //TASK MANAGER
             edge_server();
             exit(0);
         }
+    //wait for each edge server to read it's line from file.   
+    
     }
 
     while (wait(&x) > 0);
@@ -495,14 +506,14 @@ void monitor() {
 	ignore_signal();
 
     while(end == 0){
-        if(queuepos * 0.8 <= length){
+        if(my_sharedm->queuepos * 0.8 <= length){
             /*if(tempmin > max_wait) { //falta o tempmin...
                 my_sharedm->nivel_perf = 1;
             }*/
         }
 
         if(my_sharedm->nivel_perf == 1){
-            if(queuepos * 0.2 >= length){
+            if(my_sharedm->queuepos * 0.2 >= length){
                 my_sharedm->nivel_perf = 0;
             }
         }
@@ -523,12 +534,17 @@ int main() {
 
     signal(SIGINT, finish);
     signal(SIGTSTP, stats);
-
+	
     log_file  = fopen("log_file.txt", "w");
     fclose(log_file);
     
+    edge_servers = read_file();
+    
+    int shm_users = 3 + edge_servers;
+    
+    
         // Criar o segmento de memória partilhada
-    if ((shmid = shmget(IPC_PRIVATE, sizeof(shared_mem), IPC_CREAT | 0777)) < 0){
+    if ((shmid = shmget(IPC_PRIVATE, shm_users * sizeof(shared_mem), IPC_CREAT | 0777)) < 0){
         write_file("%s:Error on shmget function!\n");
         exit(-1);
     }
@@ -537,7 +553,11 @@ int main() {
         write_file("%s:Error on shmat function!\n");
         exit(-1);
     }
-
+    
+    my_sharedm->queuepos = atoi(queue_pos);
+    my_sharedm->maxwait = atoi(max_wait);
+    my_sharedm->edgeservers = edge_servers;
+    
 
 
     if (mkfifo(PIPE_NAME, O_CREAT|O_EXCL|0600)<0 && (errno!= EEXIST)) {
