@@ -31,27 +31,21 @@ typedef struct task {
 } task;
 
 
-//task manager: criar uma fila que ira ter tamanho QUEUE_POS , se a fila ja estiver cheia apagamos a task recevida e escrevemos no log.
-//thread scheduler vai ver as tarefas que estao na fila e dar-lhes prioridades. Se chegar um pedido novo as prioridades sao reavaliadas. Se o prazo maximo de execucao de uma tarefa ja tiver passado eliminamos essa tarefa.
-//as prioridades sao baseadas no tempo maximo de execucao e , o tempo de chegada a fila.
-
-
 typedef struct {
 	int queuepos;
 	int maxwait;
 	int edgeservers;
     int alt_receber_tarefa; //o que e isto?
     int nivel_perf;
-    int read;
+    char name[64];
     int capac_proc1;
-    int capac_proc2; 
+    int capac_proc2;
+    int length; 
 } shared_mem;
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t mutex_conf = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t mutex_log = PTHREAD_MUTEX_INITIALIZER;
+sem_t *semaphore , *sem_pipe;
 pthread_cond_t  cond_var = PTHREAD_COND_INITIALIZER;
-pthread_cond_t  cond_conf = PTHREAD_COND_INITIALIZER;
 
 shared_mem *my_sharedm;
 
@@ -67,7 +61,6 @@ int finish_vcpumin = 0;
 int finish_vcpumax = 0;
 int fd;
 int shmid;
-int length = 0;
 int end = 0;
 int tasks_executed = 0;
 double tempo_total = 0;
@@ -81,16 +74,17 @@ FILE *config_file;
 
 
 void write_file(char string[]){
+	
+	sem_wait(semaphore);
 
     log_file  = fopen("log_file.txt", "a");
-
-    pthread_mutex_lock(&mutex_log);
 
     fprintf(log_file, string , s);
     printf(string , s);
 
-    pthread_mutex_unlock(&mutex_log);
     fclose(log_file);
+    
+    sem_post(semaphore);
 }
 
 void ignore_signal(){
@@ -104,32 +98,32 @@ void delete_task(int indice ){ //TASK MANAGER
 
     int task_priority = num_tasks[indice].priority;
 
-    for (int i = 0; i < length-1; i++)
+    for (int i = 0; i < my_sharedm->length-1; i++)
     {   
         if(task_priority < num_tasks[i+1].priority)
             num_tasks[i].priority--;
 
         num_tasks[i] = num_tasks[i+1]; // assign arr[i+1] to arr[i]
     }
-    length--;
+    my_sharedm->length--;
 }
 
 void reavaliar_prioridade(){ //TASK MANAGER
 
 
-    printf("reavaliating priority\n");
+    //printf("reavaliating priority\n");
     int priority = 1;
     
-    printf("before reavaliating\n");
-    for(int i = 0 ; i < length ; i++){
-    	printf("MAX TIME %f , PRIORITY %d ||",num_tasks[i].temp_max , num_tasks[i].priority);
+    //printf("before reavaliating\n");
+    for(int i = 0 ; i < my_sharedm->length ; i++){
+    	//printf("MAX TIME %f , PRIORITY %d ||",num_tasks[i].temp_max , num_tasks[i].priority);
     }
 	printf("\n");
-    for(int i = 0 ; i < length ; i++){
+    for(int i = 0 ; i < my_sharedm->length ; i++){
 
         priority = 1;
 
-        for(int x = 0 ; x < length ; x++){
+        for(int x = 0 ; x < my_sharedm->length ; x++){
             if(num_tasks[i].temp_max > num_tasks[x].temp_max)
                 priority++;
             else if(num_tasks[i].temp_max == num_tasks[x].temp_max){
@@ -149,9 +143,9 @@ void reavaliar_prioridade(){ //TASK MANAGER
         num_tasks[i].priority = priority;
     }
 	
-	printf("After reavaliating\n");
-	for(int i = 0 ; i < length ; i++){
-    	printf("TASK ID %f , PRIORITY %d ||",num_tasks[i].temp_max , num_tasks[i].priority);
+	//printf("After reavaliating\n");
+	for(int i = 0 ; i < my_sharedm->length ; i++){
+    	//printf("TASK ID %f , PRIORITY %d ||",num_tasks[i].temp_max , num_tasks[i].priority);
     }
 	printf("\n");
 }
@@ -163,19 +157,19 @@ void add_task(task added_task){ //TASK MANAGER
     int maxwait = atoi(max_wait);
     int full = 0;
 
-    printf("Adding task %d\n" , added_task.id);
+    //printf("Adding task %d\n" , added_task.id);
 
-    if(length == my_sharedm->queuepos){
+    if(my_sharedm->length == my_sharedm->queuepos){
         write_file("%s:Queue full! Removing task...\n");
         full = -1;
     }
 
     if(full == 0){
-        num_tasks[length] = added_task;
-    	printf("%d\n" , num_tasks[length].id); 
-    	printf("%d\n" , length);
+        num_tasks[my_sharedm->length] = added_task;
+    	//printf("%d\n" , num_tasks[length].id); 
+    	//printf("%d\n" , length);
 
-        length++;
+        my_sharedm->length++;
         reavaliar_prioridade();
     }
 
@@ -194,13 +188,6 @@ void *vcpu_min(void *u){
         double time = 0;
         int atual_task = 0;
 
-        for(int i = 0 ; i < length ; i++){   // a task vai ser enviada por isso tiramos isto depois
-            if(num_tasks[i].priority == 1){
-                atual_task = i;
-                break;
-            }
-        }
-
         /*if(my_sharedm->nivel_perf == 0){
             if(my_sharedm->capac_proc1 > my_sharedm->capac_proc2)
                 capac_proc = my_sharedm->capac_proc2;
@@ -222,11 +209,6 @@ void *vcpu_min(void *u){
         time = time + num_tasks[atual_task].time;
 
         if(time <= num_tasks[atual_task].temp_max){
-            pthread_mutex_lock(&mutex);
-
-            //codigo do vcpu
-
-            pthread_mutex_unlock(&mutex);
             //sempre que acaba uma tarefa esta livre e vai chamar o thread dispatcher.
 
             pthread_mutex_lock(&mutex);
@@ -236,12 +218,6 @@ void *vcpu_min(void *u){
             write_file("%s:Task finished successfully.\n");
             tasks_executed++;
             tempo_total += time;
-        }
-        else {
-            write_file("%s:Task doesn't meet the time limit! Removing task...\n");
-            delete_task(atual_task);
-            reavaliar_prioridade();
-
         }
     }
     pthread_exit(NULL);
@@ -260,13 +236,6 @@ void * vcpu_max(void *m){
         double time = 0;
         int atual_task = 0;
 
-        for(int i = 0 ; i < length ; i++){   // a task vai ser enviada por isso tiramos isto depois
-            if(num_tasks[i].priority == 1){
-                atual_task = i;
-                break;
-            }
-        }
-
         /*if(my_sharedm->nivel_perf == 0){
             if(my_sharedm->capac_proc1 > my_sharedm->capac_proc2)
                 capac_proc = my_sharedm->capac_proc2;
@@ -288,11 +257,7 @@ void * vcpu_max(void *m){
         time = time + num_tasks[atual_task].time;
 
         if(time <= num_tasks[atual_task].temp_max){
-            pthread_mutex_lock(&mutex);
 
-            //codigo do vcpu
-
-            pthread_mutex_unlock(&mutex);
             //sempre que acaba uma tarefa esta livre e vai chamar o thread dispatcher.
 
             pthread_mutex_lock(&mutex);
@@ -302,12 +267,6 @@ void * vcpu_max(void *m){
             write_file("%s:Task finished successfully.\n");
             tasks_executed++;
             tempo_total += time;
-        }
-        else {
-            write_file("%s:Task doesn't meet the time limit! Removing task...\n");
-            delete_task(atual_task);
-            reavaliar_prioridade();
-
         }
     }
     pthread_exit(NULL);
@@ -321,6 +280,7 @@ void finish(){
 
 	int status1 = 0;
     char phrase[64];
+
     write_file("\n%s:Signal SIGINT received ... waiting for last tasks to close simulator.\n");
     end = 1;
     
@@ -329,7 +289,7 @@ void finish(){
     
     write_file("%s:Tasks that were not completed: \n");
 
-    for(int i = 0; i < length ; i++){
+    for(int i = 0; i < my_sharedm->length ; i++){
         sprintf(phrase, "Task ID: %d, Task Priority: %d\n", num_tasks[i].id , num_tasks[i].priority);
         write_file(phrase);
     }
@@ -337,7 +297,6 @@ void finish(){
     write_file("%s:Simulator closed.\n");
 
     pthread_mutex_destroy(&mutex);    //falta por todos os que usamos aqui.
-    pthread_mutex_destroy(&mutex_log);
     free(num_tasks);
 	
     exit(0);
@@ -362,7 +321,7 @@ void stats(){
     write_file(string);
 
     //FALTA COISAS AQUI
-    sprintf(string, "Number of tasks that have not been executed: %d \n" , length);
+    sprintf(string, "Number of tasks that have not been executed: %d \n" , my_sharedm->length);
     write_file(string);
 
 }
@@ -370,24 +329,61 @@ void stats(){
 
 
 void read_pipe(){
-	    
-    if(read(fd, &text_pipe, sizeof(text_pipe)) == -1)
-    	write_file("Error reading pipe.\n");
-   
-    if(strcmp(text_pipe , "EXIT") == 0)
-        finish();
-    else if(strcmp(text_pipe , "STATS") == 0)
-        stats();
-    else{
-        sscanf(text_pipe,"%d %d %lf %d %lf" , &t2.id , &t2.num_instr , &t2.temp_max , &t2.priority , &t2.time);
-        t2.time = clock();
+	char aux[128];
+	
+	while(1){
+	//read first 4 bytes and check if it's EXIT
+	sem_wait(sem_pipe);
+    	if(read(fd, &text_pipe, sizeof(4)) == -1)
+    		write_file("Error reading pipe.\n");
+   	
+    	if(strcmp(text_pipe , "EXIT") == 0)
+        	finish();
+       	//not exit, read next byte and check if it's STATS
+		else if(read(fd, &aux, sizeof(1)) == -1)
+			write_file("Error reading pipe.\n");
+			
+		strcat(text_pipe,aux);
+		
+		if(strcmp(text_pipe , "STATS") == 0)
+			stats();
+    	else {
+    	//It's neither of them let's check if it was a task that was sent
+    		if(read(fd, &aux, sizeof(aux) - 5) == -1)
+    			write_file("Error reading pipe.\n");
+    			
+    		strcat(text_pipe,aux);
+    		//not a task, we complain and then keep waitting for a task.
+        	if(sscanf(text_pipe,"%d %d %lf" , &t2.id , &t2.num_instr , &t2.temp_max) != 3)
+            	write_file("Wrong values received from pipe! ... \n");
+            //it's a task , start task values and leave the function.
+        	else{
+        		t2.priority = -1;
+        		t2.time = clock();
+        		sem_post(sem_pipe);
+        		break;
+        	}
+        	
+    	}
+    sem_post(sem_pipe);
     }
-    
-    
 }
+    
+    
+void init(){
+
+    sem_unlink("SEMAPHORE");
+    semaphore = sem_open("SEMAPHORE" , O_CREAT|O_EXCL , 0700 , 1);
+    sem_unlink("PIPE_SEM");
+    sem_pipe = sem_open("PIPE_SEM", O_CREAT|O_EXCL , 0700 , 1);
+    
+
+}     
+    
     
 
 int read_file() {
+	
     char num_edge_servers[20];
     int num_servers;
 
@@ -434,7 +430,8 @@ int read_file() {
         write_file("%s:Wrong number of edge servers!\n" );
         exit(1);
     }
-
+	
+	
     return num_servers;
 }
 
@@ -466,95 +463,48 @@ void * thread_scheduler(void *x){
 }
 
 
-void edge_server() {
-	
-	my_sharedm->read++;   //temos de ver como e que eles criam uma shared memory em separada para eles
-						//como são 3 edge servers nao podem guardar todos na mesma.
+void edge_server(int edge_id) {
+
 	ignore_signal();
 
-	int id_flag = 100;
 	int troca = 0;
-    //informar ao maintenance managers que esta ativo.
-    char server_name[64];
-    char capac1[20];
-	char capac2[20];
-    char line[64];
-    char *tokens;
-    
-    pthread_mutex_lock(&mutex_conf);
-    
-    //skip line that was read by another edge server.
-    if(my_sharedm->read != 0){
-    	for(int line = 0 ; line < my_sharedm->read ; line++){
-    		fscanf(config_file, "%*[^\n]\n");
-    	}
-    }
-    
-    if (fscanf(config_file , "%s" , line) != 1) {
-        write_file("%s:Error reading file!\n");
-        exit(-1);
-    }
-
-    tokens = strtok(line, ",");
-    strcpy(server_name, tokens);
-
-    tokens = strtok(NULL, ",");
-    strcpy(capac1, tokens);
-
-    tokens = strtok(NULL, ",");
-    strcpy(capac2, tokens);
-    
-    
-    my_sharedm->capac_proc1 = atoi(capac1);
-    my_sharedm->capac_proc2 = atoi(capac2);
-    
-
-    if(my_sharedm->capac_proc1 == 0){
-        write_file("%s:Error converting to int!\n");
-        exit(-1);
-    }
-    if(my_sharedm->capac_proc2 == 0){
-        write_file("%s:Error converting to int!\n");
-        exit(-1);
-    }
-
-    pthread_mutex_unlock(&mutex_conf);
 	
+    //informar ao maintenance managers que esta ativo.
+ 
     pthread_t thread_vcpu[2];
     int id[2];
     
     id[0] = 0;
     id[1] = 1;
+    
     //pthread_create(&thread_vcpu[0], NULL, vcpu_min , (void *) &id[0]);
     
-    int current_flag = my_sharedm->nivel_perf;
+    int current_flag = my_sharedm[edge_id].alt_receber_tarefa;
     
     while(1){ //falta ler a message queue com flag para nao ser bloqueante ate recever alguma coisa.
     
-		if(current_flag != my_sharedm->nivel_perf && troca == 0){
+		if(current_flag != my_sharedm[edge_id].nivel_perf && troca == 0){
 			if(my_sharedm->nivel_perf != -1)
 				troca++;
 			else
-				current_flag = my_sharedm->nivel_perf; //NAO TESTEI.
+				current_flag = my_sharedm[edge_id].nivel_perf; //NAO TESTEI.
 		}
     	
-    	if(my_sharedm->nivel_perf == 1 && troca == 1){
+    	if(my_sharedm[edge_id].nivel_perf == 1 && troca == 1){
     	
             pthread_create(&thread_vcpu[1], NULL, vcpu_max, (void *) &id[1]);
-            current_flag = my_sharedm->nivel_perf;
+            current_flag = my_sharedm[edge_id].nivel_perf;
             troca = 0;
             
-       	}else if(my_sharedm->nivel_perf == 0 && troca == 1){
+       	}else if(my_sharedm[edge_id].nivel_perf == 0 && troca == 1){
         
         	 pthread_join(thread_vcpu[1],NULL);
-        	 current_flag = my_sharedm->nivel_perf;
+        	 current_flag = my_sharedm[edge_id].nivel_perf;
         	 troca = 0;
         	 
         }	 
     }
-    
-    for(int n = 0 ; n < 10 ; n ++)
-    	printf("%s : %d     , %d\n", server_name, my_sharedm->capac_proc1 , my_sharedm->capac_proc2);
+
 }
 
 
@@ -565,7 +515,6 @@ void task_manager() { //TASK MANAGER
     pthread_t thread_sched;
 	
 	ignore_signal();
-	my_sharedm->read = 0;
     num_tasks = malloc(my_sharedm->queuepos * sizeof(task));
     
     pthread_create(&thread_sched, NULL, thread_scheduler, (void *) &id_scheduler);
@@ -576,7 +525,7 @@ void task_manager() { //TASK MANAGER
         if(fork() == 0) {
             write_file("%s:Process edge_server created.\n");
 
-            edge_server();
+            edge_server(i);
             exit(0);
         }
     //wait for each edge server to read it's line from file.   
@@ -591,16 +540,21 @@ void task_manager() { //TASK MANAGER
 void monitor() {
 
 	ignore_signal();
-
+	int change_level = 0;
+	
     while(end == 0){
-        if(my_sharedm->queuepos * 0.8 <= length){
+        if(my_sharedm->queuepos * 0.8 <= my_sharedm->length && change_level == 0){
             /*if(tempmin > max_wait) { //falta o tempmin...
                 my_sharedm->nivel_perf = 1;
             }*/
+            my_sharedm->nivel_perf = 1;
+            change_level++;
+            printf("FOI TROCADO O NIVEL !!!!!!! \n");
         }
 
         if(my_sharedm->nivel_perf == 1){
-            if(my_sharedm->queuepos * 0.2 >= length){
+            if(my_sharedm->queuepos * 0.2 >= my_sharedm->length){
+            	change_level = 0;
                 my_sharedm->nivel_perf = 0;
             }
         }
@@ -618,6 +572,12 @@ ignore_signal();
 int main() {
 
     int status = 0;
+    char capac1[20];
+	char capac2[20];
+    char line[64];
+    char *tokens;   
+    
+    init();
 
     signal(SIGINT, finish);
     signal(SIGTSTP, stats);
@@ -628,9 +588,9 @@ int main() {
     edge_servers = read_file();
     
     int shm_users = 3 + edge_servers;
+
     
-    
-        // Criar o segmento de memória partilhada
+    // Criar o segmento de memória partilhada
     if ((shmid = shmget(IPC_PRIVATE, shm_users * sizeof(shared_mem), IPC_CREAT | 0777)) < 0){
         write_file("%s:Error on shmget function!\n");
         exit(-1);
@@ -641,11 +601,41 @@ int main() {
         exit(-1);
     }
     
-    my_sharedm->queuepos = atoi(queue_pos);
-    my_sharedm->maxwait = atoi(max_wait);
-    my_sharedm->edgeservers = edge_servers;
-    
+    for(int index = 0 ; index < edge_servers ; index++){
 
+        if (fscanf(config_file , "%s" , line) != 1) {
+            write_file("%s:Error reading file!\n");
+            exit(-1);
+        }
+
+        tokens = strtok(line, ",");
+        strcpy(my_sharedm[index].name, tokens);
+
+        tokens = strtok(NULL, ",");
+        strcpy(capac1, tokens);
+
+        tokens = strtok(NULL, ",");
+        strcpy(capac2, tokens);
+        
+        
+        my_sharedm[index].capac_proc1 = atoi(capac1);
+        my_sharedm[index].capac_proc2 = atoi(capac2);
+        
+
+        if(my_sharedm[index].capac_proc1 == 0){
+            write_file("%s:Error converting to int!\n");
+            exit(-1);
+        }
+        if(my_sharedm[index].capac_proc2 == 0){
+            write_file("%s:Error converting to int!\n");
+            exit(-1);
+        }
+
+        my_sharedm[index].queuepos = atoi(queue_pos);
+        my_sharedm[index].maxwait = atoi(max_wait);
+        my_sharedm[index].edgeservers = edge_servers;
+        
+    }
 
     if (mkfifo(PIPE_NAME, O_CREAT|O_EXCL|0600)<0 && (errno!= EEXIST)) {
         write_file("Error creating pipe.\n");
