@@ -17,6 +17,7 @@ Pedro Miguel Pereira Catorze Nº 2020222916
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/stat.h>
+#include <sys/msg.h>
 #include <sys/types.h>
 
 #define PIPE_NAME "TASK_PIPE"
@@ -32,6 +33,11 @@ typedef struct task {
 
 
 typedef struct {
+    long mtype;
+    int number;
+} mq_msg;
+
+typedef struct {
 	int queuepos;
 	int maxwait;
 	int edgeservers;
@@ -44,8 +50,10 @@ typedef struct {
 } shared_mem;
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-sem_t *semaphore , *sem_pipe;
+pthread_mutex_t mq_mutex = PTHREAD_MUTEX_INITIALIZER;
+sem_t *semaphore , *sem_pipe , *sem_mq;
 pthread_cond_t  cond_var = PTHREAD_COND_INITIALIZER;
+pthread_cond_t maintenance = PTHREAD_COND_INITIALIZER;
 
 shared_mem *my_sharedm;
 
@@ -60,12 +68,12 @@ int edge_servers = 0;
 int finish_vcpumin = 0;
 int finish_vcpumax = 0;
 int fd;
+int mq;
 int shmid;
 int end = 0;
 int tasks_executed = 0;
 double tempo_total = 0;
 struct task *num_tasks;
-
 
 task t2;
 FILE *log_file;
@@ -376,6 +384,8 @@ void init(){
     semaphore = sem_open("SEMAPHORE" , O_CREAT|O_EXCL , 0700 , 1);
     sem_unlink("PIPE_SEM");
     sem_pipe = sem_open("PIPE_SEM", O_CREAT|O_EXCL , 0700 , 1);
+    sem_unlink("MQ_SEM");
+    sem_mq = sem_open("MQ_SEM" , O_CREAT|O_EXCL , 0700 , 1);
     
 
 }     
@@ -466,8 +476,12 @@ void * thread_scheduler(void *x){
 void edge_server(int edge_id) {
 
 	ignore_signal();
-
+    //pthread_cond_signal(&maintenance); //ver isto
 	int troca = 0;
+    int received_msg = 0;
+    mq_msg msg1;
+    msg1.mtype = 3;
+    msg1.number = 0;
 	
     //informar ao maintenance managers que esta ativo.
  
@@ -482,6 +496,22 @@ void edge_server(int edge_id) {
     int current_flag = my_sharedm[edge_id].alt_receber_tarefa;
     
     while(1){ //falta ler a message queue com flag para nao ser bloqueante ate recever alguma coisa.
+
+        sem_wait(sem_mq);
+        if(msgrcv(mq, &msg1, sizeof(msg1), 1, IPC_NOWAIT) != -1){
+			sem_post(sem_mq);
+            printf("%s was choosen for maintenance!...\n", my_sharedm[edge_id].name);
+            received_msg++; 
+            msg1.mtype = 3;
+            //terminar tarefas , ainda nao sei como fazer isso.
+            msgsnd(mq, &msg1, sizeof(msg1), 0);
+            msgrcv(mq, &msg1, sizeof(msg1), 2, 0);
+            
+        }
+        if(received_msg == 0)
+            sem_post(sem_mq);
+        else
+            received_msg = 0;
     
 		if(current_flag != my_sharedm[edge_id].nivel_perf && troca == 0){
 			if(my_sharedm->nivel_perf != -1)
@@ -538,7 +568,7 @@ void task_manager() { //TASK MANAGER
 
 
 void monitor() {
-
+	
 	ignore_signal();
 	int change_level = 0;
 	
@@ -566,6 +596,27 @@ void maintenance_manager() {
 
 ignore_signal();
 
+//pthread_cond_wait(&maintenance , &mq_mutex); //ver isto
+
+mq_msg msg;
+
+while(1){
+
+    msg.mtype = 1;
+    msg.number = 1;
+
+    msgsnd(mq, &msg, sizeof(msg), 0);
+    msgrcv(mq, &msg, sizeof(msg), 3, 0);
+
+    int sleep_time = (rand() % (5 - 1 + 1)) + 1;
+
+    sleep(sleep_time);
+    printf("Server sleeping for %d seconds...\n",sleep_time);
+
+    msg.mtype = 2;
+    msgsnd(mq, &msg, sizeof(msg) , 0);
+}
+
 }
 
 
@@ -586,7 +637,8 @@ int main() {
     fclose(log_file);
     
     edge_servers = read_file();
-    
+    assert((mq = msgget(IPC_PRIVATE, IPC_CREAT|0700)) != -1 );
+
     int shm_users = 3 + edge_servers;
 
     
@@ -646,7 +698,13 @@ int main() {
     t = time(NULL);
     tm = localtime(&t);
     assert(strftime(s, sizeof(s), "%c", tm));
+	
+	if(fork() == 0) {
+        write_file("%s:Process Maintenance Manager created.\n");
 
+        maintenance_manager();
+        exit(0);
+    }	
 
     if(fork() == 0){
         write_file("%s:Process Monitor created.\n");
@@ -662,13 +720,6 @@ int main() {
         exit(0);
     }
 
-
-    if(fork() == 0) {
-        write_file("%s:Process Maintenance Manager created.\n");
-		
-        maintenance_manager();
-        exit(0);
-    }
 
     while ((wait(&status)) > 0);
 
