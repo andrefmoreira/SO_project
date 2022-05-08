@@ -3,18 +3,18 @@
 
 
 MOBILE NODES:
-- Criação do mobile node    *DONE*
-- Leitura correta dos parâmetros da linha de comando     *DONE*
-- Geração e escrita das tarefas no named pipe          *DONE*
+- Criação do mobile node   
+- Leitura correta dos parâmetros da linha de comando   
+- Geração e escrita das tarefas no named pipe         
 
 
 
 SYSTEM MANAGER:
 - Arranque do simulador de offloading, leitura do ficheiro de configurações,
-validação dos dados do ficheiro e aplicação das configurações lidas            *DONE*
-- Criação da memória partilhada          *DONE*
-- Criação do named pipe                   *DONE*
-- Criação dos processos Task Manager, Monitor e Maintenance Manager             *DONE*
+validação dos dados do ficheiro e aplicação das configurações lidas            
+- Criação da memória partilhada          
+- Criação do named pipe                 
+- Criação dos processos Task Manager, Monitor e Maintenance Manager     
 - Criação da fila de mensagens
 - Escrever a informação estatística no ecrã como resposta ao sinal SIGTSTP
 - Capturar o sinal SIGINT, terminar a corrida e liberta os recursos
@@ -22,15 +22,15 @@ validação dos dados do ficheiro e aplicação das configurações lidas       
 
 
 TASK MANAGER:
-- Criar os processos Edge Server de acordo com as configurações        *DONE*
-- Ler e validar comandos lidos do named pipe                           *IN PROGRESS*
-- Criação da thread scheduler e gestão do escalonamento das tarefas    *IN PROGRESS*
+- Criar os processos Edge Server de acordo com as configurações      
+- Ler e validar comandos lidos do named pipe                         
+- Criação da thread scheduler e gestão do escalonamento das tarefas   
 - Criação da thread dispatcher para distribuição das tarefas
 
 
 
 EDGE SERVER:
-- Criação das threads que simulam os vCPUs       *DONE*
+- Criação das threads que simulam os vCPUs      
 - Executar as tarefas       
 
 
@@ -47,12 +47,12 @@ MAINTENANCE MANAGER:
 
 
 FICHEIRO LOG:
-- Envio sincronizado do output para ficheiro de log e ecrã         *DONE*
+- Envio sincronizado do output para ficheiro de log e ecrã       
 
 
 
 GERAL:
-- Criar um makefile                                           *DONE*
+- Criar um makefile                                          
 - Diagrama com a arquitetura e mecanismos de sincronização
 - Suporte de concorrência no tratamento de pedidos
 - Deteção e tratamento de erros
