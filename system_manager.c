@@ -185,30 +185,19 @@ void add_task(task added_task){ //TASK MANAGER
 
 //TEMOS DE SEPARAR EM VCPU_MIN E VCPU_MAX PARA SER MAIS FACIL
 void *vcpu_min(void *u){
+    
+    printf("bom dia\n");
+    int capac_proc = 0;
+
+    if(my_sharedm->capac_proc1 > my_sharedm->capac_proc2)
+        capac_proc = my_sharedm->capac_proc2;
+    else
+        capac_proc = my_sharedm->capac_proc1;
 
     while(finish_vcpumin == 0){
         //pthread_cond_wait(&tarefa) fazer aqui uma variavel de condiçao ate receber a tarefa pelo unamed pipe.
         int capac_proc;
         int id = *((int*)u);
-
-        //determinar o tempo que demora, se for menor que o tempo maximo da task removemos a task.
-        //realizar a task que tem priority 1
-        double time = 0;
-        int atual_task = 0;
-
-        /*if(my_sharedm->nivel_perf == 0){
-            if(my_sharedm->capac_proc1 > my_sharedm->capac_proc2)
-                capac_proc = my_sharedm->capac_proc2;
-            else
-                capac_proc = my_sharedm->capac_proc1;
-        }
-        //ESTA PARTE TAMBEM VAI SER REMOVIDA
-        if(my_sharedm->nivel_perf == 1){
-            if(id == 1)
-                capac_proc = my_sharedm->capac_proc2;
-            else
-                capac_proc = my_sharedm->capac_proc1;
-        }*/
 
         //tempo minimo e o tempo que num momento T o vcpu demora a ficar livre, ou seja vcpu ta ocupado, no melhor dos casos no momento T+X o vcpu esta livre, ou seja temp min = X.
 
@@ -234,6 +223,14 @@ void *vcpu_min(void *u){
 
 void * vcpu_max(void *m){
 
+    printf("cheguei !!! \n");
+    int capacproc = 0;
+
+    if(my_sharedm->capac_proc1 < my_sharedm->capac_proc2)
+        capacproc = my_sharedm->capac_proc2;
+    else
+        capacproc = my_sharedm->capac_proc1;
+
 	while(finish_vcpumax == 0){
         //pthread_cond_wait(&tarefa) fazer aqui uma variavel de condiçao ate receber a tarefa pelo unamed pipe.
         int capac_proc;
@@ -244,28 +241,17 @@ void * vcpu_max(void *m){
         double time = 0;
         int atual_task = 0;
 
-        /*if(my_sharedm->nivel_perf == 0){
-            if(my_sharedm->capac_proc1 > my_sharedm->capac_proc2)
-                capac_proc = my_sharedm->capac_proc2;
-            else
-                capac_proc = my_sharedm->capac_proc1;
-        }
-        //ESTA PARTE TAMBEM VAI SER REMOVIDA
-        if(my_sharedm->nivel_perf == 1){
-            if(id == 1)
-                capac_proc = my_sharedm->capac_proc2;
-            else
-                capac_proc = my_sharedm->capac_proc1;
-        }*/
-
         //tempo minimo e o tempo que num momento T o vcpu demora a ficar livre, ou seja vcpu ta ocupado, no melhor dos casos no momento T+X o vcpu esta livre, ou seja temp min = X.
 
         time = ((double)num_tasks[atual_task].num_instr * 1000) / (capac_proc * 1000000);
-        num_tasks[atual_task].time = clock() - num_tasks[atual_task].time;
+        num_tasks[atual_task].time = clock() - num_tasks[atual_task].time;            //ISTO NAO DEVE SER AQUI, ACHO QUE E NO DISPATCHER.
         time = time + num_tasks[atual_task].time;
 
-        if(time <= num_tasks[atual_task].temp_max){
+        
 
+        if(time <= num_tasks[atual_task].temp_max){ // ESTA CONFIRMACAO TBM VAI SAIR E VAI SER FEITA PELO DISPATCHER. 
+
+            //VCPU SO VAI FICAR A DAR READ AO UNAMED PIPE ATE RECEBER UMA MENSAGEM, DEPOIS FAZ A TAREFA E VOLTA A ESPERAR POR UMA NOVA.
             //sempre que acaba uma tarefa esta livre e vai chamar o thread dispatcher.
 
             pthread_mutex_lock(&mutex);
@@ -273,8 +259,8 @@ void * vcpu_max(void *m){
             pthread_mutex_unlock(&mutex);
             //perguntar como e que identificamos qual vcpu esta livre.
             write_file("%s:Task finished successfully.\n");
-            tasks_executed++;
-            tempo_total += time;
+            tasks_executed++; //SE ISTO ESTIVER EM SHM E MAIS FACIL MAS NAO SEI.
+            tempo_total += time; //IGUAL A ISTO.
         }
     }
     pthread_exit(NULL);
@@ -288,8 +274,8 @@ void finish(){
 
 	int status1 = 0;
     char phrase[64];
-
-    write_file("\n%s:Signal SIGINT received ... waiting for last tasks to close simulator.\n");
+    //vamos ter de dar kill aos threads e processos que ja nao sao precisos, parar de receber tarefas e depois esperar que as tarefas do vcpu acabem.
+    write_file("\n%s:Signal SIGINT received ... waiting for last tasks to close simulator.\n"); 
     end = 1;
     
     while ((wait(&status1)) > 0);
@@ -312,8 +298,7 @@ void finish(){
 
 void stats(){
 
-	//precisamos de enviar o length , tempo_total , tasks_executed por um pipe para aqui.
-	//ou entao por numa shared memory separada, temos de pensar nisto.
+	//meter tudo na shared memory??? nao sei muito bem como ter acesso aos valores que precisamos aqui.
     char phrase[64];
     
 	write_file("\n%s:Signal SIGTSTP received ... showing stats! \n");
@@ -477,8 +462,8 @@ void edge_server(int edge_id) {
 
 	ignore_signal();
     //pthread_cond_signal(&maintenance); //ver isto
-	int troca = 0;
     int received_msg = 0;
+
     mq_msg msg1;
     msg1.mtype = 3;
     msg1.number = 0;
@@ -491,42 +476,55 @@ void edge_server(int edge_id) {
     id[0] = 0;
     id[1] = 1;
     
-    //pthread_create(&thread_vcpu[0], NULL, vcpu_min , (void *) &id[0]);
+    pthread_create(&thread_vcpu[0], NULL, vcpu_min , (void *) &id[0]); 
     
     int current_flag = my_sharedm[edge_id].alt_receber_tarefa;
     
-    while(1){ //falta ler a message queue com flag para nao ser bloqueante ate recever alguma coisa.
+    while(1){ 
 
         sem_wait(sem_mq);
+
         if(msgrcv(mq, &msg1, sizeof(msg1), 1, IPC_NOWAIT) != -1){
+
 			sem_post(sem_mq);
             printf("%s was choosen for maintenance!...\n", my_sharedm[edge_id].name);
             received_msg++; 
             msg1.mtype = 3;
-            //terminar tarefas , ainda nao sei como fazer isso.
+
+            //falta terminar tarefas , ainda nao sei como fazer isso.
             msgsnd(mq, &msg1, sizeof(msg1), 0);
-            msgrcv(mq, &msg1, sizeof(msg1), 2, 0);
             
+            my_sharedm[edge_id].nivel_perf = -1;
+
+            if(current_flag == 1){
+                for(int i = 0 ; i < 2 ; i++)
+                    pthread_join(thread_vcpu[i],NULL);
+            }
+            else{
+                pthread_join(thread_vcpu[0],NULL);
+            }
+
+            msgrcv(mq, &msg1, sizeof(msg1), 2, 0);
+            printf("%s just finished maintenance! ... \n" , my_sharedm[edge_id].name);
+            my_sharedm[edge_id].nivel_perf = current_flag;
+
         }
         if(received_msg == 0)
             sem_post(sem_mq);
         else
             received_msg = 0;
+           
     
-		if(current_flag != my_sharedm[edge_id].nivel_perf && troca == 0){
-			if(my_sharedm->nivel_perf != -1)
-				troca++;
-			else
-				current_flag = my_sharedm[edge_id].nivel_perf; //NAO TESTEI.
-		}
+		if(current_flag != my_sharedm[edge_id].nivel_perf)
+			current_flag = my_sharedm[edge_id].nivel_perf; //NAO TESTEI.
     	
-    	if(my_sharedm[edge_id].nivel_perf == 1 && troca == 1){
+    	if(current_flag == 1){
     	
             pthread_create(&thread_vcpu[1], NULL, vcpu_max, (void *) &id[1]);
             current_flag = my_sharedm[edge_id].nivel_perf;
             troca = 0;
             
-       	}else if(my_sharedm[edge_id].nivel_perf == 0 && troca == 1){
+       	}else if(current_flag == 0){
         
         	 pthread_join(thread_vcpu[1],NULL);
         	 current_flag = my_sharedm[edge_id].nivel_perf;
@@ -557,8 +555,7 @@ void task_manager() { //TASK MANAGER
 
             edge_server(i);
             exit(0);
-        }
-    //wait for each edge server to read it's line from file.   
+        } 
     
     }
 
@@ -577,7 +574,8 @@ void monitor() {
             /*if(tempmin > max_wait) { //falta o tempmin...
                 my_sharedm->nivel_perf = 1;
             }*/
-            my_sharedm->nivel_perf = 1;
+            for(int i = 0; i < edge_servers ; i++)
+                my_sharedm[i]->nivel_perf = 1;
             change_level++;
             printf("FOI TROCADO O NIVEL !!!!!!! \n");
         }
@@ -585,7 +583,8 @@ void monitor() {
         if(my_sharedm->nivel_perf == 1){
             if(my_sharedm->queuepos * 0.2 >= my_sharedm->length){
             	change_level = 0;
-                my_sharedm->nivel_perf = 0;
+                for(int i = 0; i < edge_servers ; i++)
+                    my_sharedm[i]->nivel_perf = 0;
             }
         }
     }
