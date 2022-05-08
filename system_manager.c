@@ -198,6 +198,10 @@ void *vcpu_min(void *u){
         //pthread_cond_wait(&tarefa) fazer aqui uma variavel de condiçao ate receber a tarefa pelo unamed pipe.
         int capac_proc;
         int id = *((int*)u);
+        
+        
+        double time = 0;
+        int atual_task = 0;
 
         //tempo minimo e o tempo que num momento T o vcpu demora a ficar livre, ou seja vcpu ta ocupado, no melhor dos casos no momento T+X o vcpu esta livre, ou seja temp min = X.
 
@@ -228,9 +232,10 @@ void * vcpu_max(void *m){
 
     if(my_sharedm->capac_proc1 < my_sharedm->capac_proc2)
         capacproc = my_sharedm->capac_proc2;
-    else
+    else{
         capacproc = my_sharedm->capac_proc1;
-
+	}
+	
 	while(finish_vcpumax == 0){
         //pthread_cond_wait(&tarefa) fazer aqui uma variavel de condiçao ate receber a tarefa pelo unamed pipe.
         int capac_proc;
@@ -327,16 +332,20 @@ void read_pipe(){
 	while(1){
 	//read first 4 bytes and check if it's EXIT
 	sem_wait(sem_pipe);
-    	if(read(fd, &text_pipe, sizeof(4)) == -1)
+    	if(read(fd, &text_pipe, sizeof(4)) == -1){
     		write_file("Error reading pipe.\n");
-   	
+   		}
+   		
+   		//printf("MENSAGEM DO PIPE 1: %s\n",text_pipe); 
+   		
     	if(strcmp(text_pipe , "EXIT") == 0)
         	finish();
        	//not exit, read next byte and check if it's STATS
 		else if(read(fd, &aux, sizeof(1)) == -1)
 			write_file("Error reading pipe.\n");
 			
-		strcat(text_pipe,aux);
+		strcat(text_pipe,aux); //problema aqui, a mensagem fica STATS\n , tenho de aranjar maneira de ler sem o \n.
+		//printf("MENSAGEM DO PIPE 1: %s\n",text_pipe); 
 		
 		if(strcmp(text_pipe , "STATS") == 0)
 			stats();
@@ -463,6 +472,7 @@ void edge_server(int edge_id) {
 	ignore_signal();
     //pthread_cond_signal(&maintenance); //ver isto
     int received_msg = 0;
+    int flag_change = 0;
 
     mq_msg msg1;
     msg1.mtype = 3;
@@ -496,40 +506,44 @@ void edge_server(int edge_id) {
             
             my_sharedm[edge_id].nivel_perf = -1;
 
-            if(current_flag == 1){
+            /*if(current_flag == 1){
                 for(int i = 0 ; i < 2 ; i++)
                     pthread_join(thread_vcpu[i],NULL);
             }
             else{
                 pthread_join(thread_vcpu[0],NULL);
-            }
+            }*/ //ESTA CORRETO MAS SE ESTIVER ISTO AQUI FICA PRESO PORQUE NAO TERMINAMOS OS VCPUS.
 
             msgrcv(mq, &msg1, sizeof(msg1), 2, 0);
             printf("%s just finished maintenance! ... \n" , my_sharedm[edge_id].name);
+
+		if(current_flag != my_sharedm[edge_id].nivel_perf && my_sharedm[edge_id].nivel_perf != -1){
+			current_flag = my_sharedm[edge_id].nivel_perf;
+			flag_change++;
+		}
+		else            
             my_sharedm[edge_id].nivel_perf = current_flag;
 
         }
+        
         if(received_msg == 0)
             sem_post(sem_mq);
         else
             received_msg = 0;
            
-    
-		if(current_flag != my_sharedm[edge_id].nivel_perf)
-			current_flag = my_sharedm[edge_id].nivel_perf; //NAO TESTEI.
+		if(current_flag != my_sharedm[edge_id].nivel_perf){
+			current_flag = my_sharedm[edge_id].nivel_perf;
+			flag_change++;
+		} //NAO TESTEI.
     	
-    	if(current_flag == 1){
-    	
+    	if(current_flag == 1 && flag_change == 1){
             pthread_create(&thread_vcpu[1], NULL, vcpu_max, (void *) &id[1]);
-            current_flag = my_sharedm[edge_id].nivel_perf;
-            troca = 0;
-            
-       	}else if(current_flag == 0){
-        
+            current_flag = my_sharedm[edge_id].nivel_perf; 
+            flag_change = 0; 
+       	}else if(current_flag == 0 && flag_change == 1){
         	 pthread_join(thread_vcpu[1],NULL);
         	 current_flag = my_sharedm[edge_id].nivel_perf;
-        	 troca = 0;
-        	 
+        	 flag_change = 0;	 
         }	 
     }
 
@@ -575,7 +589,7 @@ void monitor() {
                 my_sharedm->nivel_perf = 1;
             }*/
             for(int i = 0; i < edge_servers ; i++)
-                my_sharedm[i]->nivel_perf = 1;
+                my_sharedm[i].nivel_perf = 1;
             change_level++;
             printf("FOI TROCADO O NIVEL !!!!!!! \n");
         }
@@ -584,7 +598,7 @@ void monitor() {
             if(my_sharedm->queuepos * 0.2 >= my_sharedm->length){
             	change_level = 0;
                 for(int i = 0; i < edge_servers ; i++)
-                    my_sharedm[i]->nivel_perf = 0;
+                    my_sharedm[i].nivel_perf = 0;
             }
         }
     }
