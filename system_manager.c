@@ -6,7 +6,7 @@ Pedro Miguel Pereira Catorze Nº 2020222916
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
+#include <unistd.h>a
 #include <sys/shm.h>
 #include <pthread.h>
 #include <sys/wait.h>
@@ -48,14 +48,15 @@ typedef struct {
     int capac_proc2;
     int length;
     int tasks_executed;
-    double total_time;  
+    double total_time;
+    pthread_cond_t wait;
+    pthread_cond_t ready;
+    pthread_mutex_t mm_mutex;  
 } shared_mem;
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t mq_mutex = PTHREAD_MUTEX_INITIALIZER;
 sem_t *semaphore , *sem_pipe , *sem_mq , *sem_mm;
 pthread_cond_t  cond_var = PTHREAD_COND_INITIALIZER;
-pthread_cond_t maintenance = PTHREAD_COND_INITIALIZER;
 
 shared_mem *my_sharedm;
 
@@ -377,15 +378,36 @@ void read_pipe(){
     
     
 void init(int n_servers){
+	
+	pthread_mutexattr_t maintenance_mutex;
+	pthread_condattr_t maintenance_var;
 
     sem_unlink("SEMAPHORE");
     semaphore = sem_open("SEMAPHORE" , O_CREAT|O_EXCL , 0700 , 1);
+
     sem_unlink("PIPE_SEM");
     sem_pipe = sem_open("PIPE_SEM", O_CREAT|O_EXCL , 0700 , 1);
+    
     sem_unlink("MQ_SEM");
     sem_mq = sem_open("MQ_SEM" , O_CREAT|O_EXCL , 0700 , 1);
+    
     sem_unlink("MQ_MM");
     sem_mm = sem_open("MQ_MM" , O_CREAT|O_EXCL , 0700 , n_servers - 1);
+
+    /* Initialize attribute of mutex. */
+    pthread_mutexattr_init(&maintenance_mutex);
+    pthread_mutexattr_setpshared(&maintenance_mutex, PTHREAD_PROCESS_SHARED);
+
+    /* Initialize attribute of condition variable. */
+    pthread_condattr_init(&maintenance_var);
+    pthread_condattr_setpshared(&maintenance_var, PTHREAD_PROCESS_SHARED);
+
+    /* Initialize mutex. */
+    pthread_mutex_init(&my_sharedm->mm_mutex, &maintenance_mutex);
+
+    /* Initialize condition variables. */
+    pthread_cond_init(&my_sharedm->wait, &maintenance_var);
+    pthread_cond_init(&my_sharedm->ready, &maintenance_var);    
     
 }     
     
@@ -475,7 +497,7 @@ void * thread_scheduler(void *x){
 void edge_server(int edge_id) {
 
 	ignore_signal();
-    //pthread_cond_signal(&maintenance); //ver isto
+    //pthread_cond_signal(&my_sharedm->ready); 
     int received_msg = 0;
     int flag_change = 0;
 
@@ -486,9 +508,7 @@ void edge_server(int edge_id) {
     //informar ao maintenance managers que esta ativo.
  
     pthread_t thread_vcpu[2];
-    
     pthread_create(&thread_vcpu[0], NULL, vcpu_min , (void *) &edge_id); 
-    
     int current_flag = my_sharedm[edge_id].alt_receber_tarefa;
     
     while(1){ 
@@ -608,7 +628,7 @@ void monitor() {
 void *maintenance_thread(){
 
 mq_msg msg;
-
+//pthread_cond_wait(&my_sharedm->wait , &my_sharedm->mm_mutex);
 
 while(1){
 
@@ -640,8 +660,7 @@ pthread_exit(NULL);
 void maintenance_manager(int num_servers) {
 
 ignore_signal();
-
-//pthread_cond_wait(&maintenance , &mq_mutex); //ver isto
+ 
 pthread_t thread_maintenance[num_servers - 1];
     
 
@@ -670,8 +689,6 @@ int main() {
     
     edge_servers = read_file();
     assert((mq = msgget(IPC_PRIVATE, IPC_CREAT|0700)) != -1 );
-    
-    init(edge_servers);
 
     int shm_users = 3 + edge_servers;
 
@@ -686,6 +703,9 @@ int main() {
         write_file("%s:Error on shmat function!\n");
         exit(-1);
     }
+    
+    
+    init(edge_servers);
     
     for(int index = 0 ; index < edge_servers ; index++){
 
