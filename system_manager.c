@@ -46,12 +46,14 @@ typedef struct {
     char name[64];
     int capac_proc1;
     int capac_proc2;
-    int length; 
+    int length;
+    int tasks_executed;
+    double total_time;  
 } shared_mem;
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mq_mutex = PTHREAD_MUTEX_INITIALIZER;
-sem_t *semaphore , *sem_pipe , *sem_mq;
+sem_t *semaphore , *sem_pipe , *sem_mq , *sem_mm;
 pthread_cond_t  cond_var = PTHREAD_COND_INITIALIZER;
 pthread_cond_t maintenance = PTHREAD_COND_INITIALIZER;
 
@@ -186,7 +188,6 @@ void add_task(task added_task){ //TASK MANAGER
 //TEMOS DE SEPARAR EM VCPU_MIN E VCPU_MAX PARA SER MAIS FACIL
 void *vcpu_min(void *u){
     
-    printf("bom dia\n");
     int capac_proc = 0;
 
     if(my_sharedm->capac_proc1 > my_sharedm->capac_proc2)
@@ -217,8 +218,8 @@ void *vcpu_min(void *u){
             pthread_mutex_unlock(&mutex);
             //perguntar como e que identificamos qual vcpu esta livre.
             write_file("%s:Task finished successfully.\n");
-            tasks_executed++;
-            tempo_total += time;
+            my_sharedm[id].tasks_executed++;
+            my_sharedm[id].total_time += time;
         }
     }
     pthread_exit(NULL);
@@ -264,8 +265,8 @@ void * vcpu_max(void *m){
             pthread_mutex_unlock(&mutex);
             //perguntar como e que identificamos qual vcpu esta livre.
             write_file("%s:Task finished successfully.\n");
-            tasks_executed++; //SE ISTO ESTIVER EM SHM E MAIS FACIL MAS NAO SEI.
-            tempo_total += time; //IGUAL A ISTO.
+            my_sharedm[id].tasks_executed++;
+            my_sharedm[id].total_time += time;
         }
     }
     pthread_exit(NULL);
@@ -279,6 +280,7 @@ void finish(){
 
 	int status1 = 0;
     char phrase[64];
+
     //vamos ter de dar kill aos threads e processos que ja nao sao precisos, parar de receber tarefas e depois esperar que as tarefas do vcpu acabem.
     write_file("\n%s:Signal SIGINT received ... waiting for last tasks to close simulator.\n"); 
     end = 1;
@@ -332,29 +334,31 @@ void read_pipe(){
 	while(1){
 	//read first 4 bytes and check if it's EXIT
 	sem_wait(sem_pipe);
-    	if(read(fd, &text_pipe, sizeof(4)) == -1){
+    	if(read(fd, &text_pipe, sizeof(text_pipe)) == -1){
     		write_file("Error reading pipe.\n");
    		}
-   		
-   		//printf("MENSAGEM DO PIPE 1: %s\n",text_pipe); 
-   		
-    	if(strcmp(text_pipe , "EXIT") == 0)
-        	finish();
-       	//not exit, read next byte and check if it's STATS
-		else if(read(fd, &aux, sizeof(1)) == -1)
-			write_file("Error reading pipe.\n");
-			
-		strcat(text_pipe,aux); //problema aqui, a mensagem fica STATS\n , tenho de aranjar maneira de ler sem o \n.
-		//printf("MENSAGEM DO PIPE 1: %s\n",text_pipe); 
 		
-		if(strcmp(text_pipe , "STATS") == 0)
+		for(int i = 0 ; i < 4 ; i++){
+			aux[i] = text_pipe[i];
+		}
+		aux[4] = '\0';
+		
+		//verificamos se a palavra que recebemos e EXIT e, se nao tem nada a seguir dela.
+    	if(strcmp(aux , "EXIT") == 0 && text_pipe[4] == '\n'){
+        	finish();
+		}
+		
+		if(text_pipe[5] == '\n'){
+			aux[4] = text_pipe[4];
+		}
+		aux[5] = '\0';
+		//verificar se a palavra que recebemos e EXIT
+		if(strcmp(aux , "STATS") == 0){
 			stats();
+		}
+		
     	else {
     	//It's neither of them let's check if it was a task that was sent
-    		if(read(fd, &aux, sizeof(aux) - 5) == -1)
-    			write_file("Error reading pipe.\n");
-    			
-    		strcat(text_pipe,aux);
     		//not a task, we complain and then keep waitting for a task.
         	if(sscanf(text_pipe,"%d %d %lf" , &t2.id , &t2.num_instr , &t2.temp_max) != 3)
             	write_file("Wrong values received from pipe! ... \n");
@@ -372,7 +376,7 @@ void read_pipe(){
 }
     
     
-void init(){
+void init(int n_servers){
 
     sem_unlink("SEMAPHORE");
     semaphore = sem_open("SEMAPHORE" , O_CREAT|O_EXCL , 0700 , 1);
@@ -380,8 +384,9 @@ void init(){
     sem_pipe = sem_open("PIPE_SEM", O_CREAT|O_EXCL , 0700 , 1);
     sem_unlink("MQ_SEM");
     sem_mq = sem_open("MQ_SEM" , O_CREAT|O_EXCL , 0700 , 1);
+    sem_unlink("MQ_MM");
+    sem_mm = sem_open("MQ_MM" , O_CREAT|O_EXCL , 0700 , n_servers - 1);
     
-
 }     
     
     
@@ -481,12 +486,8 @@ void edge_server(int edge_id) {
     //informar ao maintenance managers que esta ativo.
  
     pthread_t thread_vcpu[2];
-    int id[2];
     
-    id[0] = 0;
-    id[1] = 1;
-    
-    pthread_create(&thread_vcpu[0], NULL, vcpu_min , (void *) &id[0]); 
+    pthread_create(&thread_vcpu[0], NULL, vcpu_min , (void *) &edge_id); 
     
     int current_flag = my_sharedm[edge_id].alt_receber_tarefa;
     
@@ -537,7 +538,7 @@ void edge_server(int edge_id) {
 		} //NAO TESTEI.
     	
     	if(current_flag == 1 && flag_change == 1){
-            pthread_create(&thread_vcpu[1], NULL, vcpu_max, (void *) &id[1]);
+            pthread_create(&thread_vcpu[1], NULL, vcpu_max, (void *) &edge_id);
             current_flag = my_sharedm[edge_id].nivel_perf; 
             flag_change = 0; 
        	}else if(current_flag == 0 && flag_change == 1){
@@ -604,16 +605,16 @@ void monitor() {
     }
 }
 
-
-void maintenance_manager() {
-
-ignore_signal();
-
-//pthread_cond_wait(&maintenance , &mq_mutex); //ver isto
+void *maintenance_thread(){
 
 mq_msg msg;
 
+
 while(1){
+
+	sem_wait(sem_mm);
+	
+	int sleep_time = (rand() % (5 - 1 + 1)) + 1;
 
     msg.mtype = 1;
     msg.number = 1;
@@ -621,15 +622,35 @@ while(1){
     msgsnd(mq, &msg, sizeof(msg), 0);
     msgrcv(mq, &msg, sizeof(msg), 3, 0);
 
-    int sleep_time = (rand() % (5 - 1 + 1)) + 1;
-
     sleep(sleep_time);
     printf("Server sleeping for %d seconds...\n",sleep_time);
 
     msg.mtype = 2;
     msgsnd(mq, &msg, sizeof(msg) , 0);
+    sleep(sleep_time);
+    
+    sem_post(sem_mm);
 }
 
+pthread_exit(NULL);
+}
+
+
+
+void maintenance_manager(int num_servers) {
+
+ignore_signal();
+
+//pthread_cond_wait(&maintenance , &mq_mutex); //ver isto
+pthread_t thread_maintenance[num_servers - 1];
+    
+
+for(int i = 0 ; i < num_servers - 1 ; i++ ){
+	pthread_create(&thread_maintenance[i], NULL, maintenance_thread , NULL);
+}
+
+for(int i = 0 ; i < num_servers - 1 ; i++)
+ 	pthread_join(thread_maintenance[i],NULL);
 }
 
 
@@ -640,8 +661,6 @@ int main() {
 	char capac2[20];
     char line[64];
     char *tokens;   
-    
-    init();
 
     signal(SIGINT, finish);
     signal(SIGTSTP, stats);
@@ -651,6 +670,8 @@ int main() {
     
     edge_servers = read_file();
     assert((mq = msgget(IPC_PRIVATE, IPC_CREAT|0700)) != -1 );
+    
+    init(edge_servers);
 
     int shm_users = 3 + edge_servers;
 
@@ -715,7 +736,7 @@ int main() {
 	if(fork() == 0) {
         write_file("%s:Process Maintenance Manager created.\n");
 
-        maintenance_manager();
+        maintenance_manager(edge_servers);
         exit(0);
     }	
 
