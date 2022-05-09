@@ -6,7 +6,7 @@ Pedro Miguel Pereira Catorze Nº 2020222916
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>a
+#include <unistd.h>
 #include <sys/shm.h>
 #include <pthread.h>
 #include <sys/wait.h>
@@ -49,9 +49,11 @@ typedef struct {
     int length;
     int tasks_executed;
     double total_time;
+    int maintenance_done;
     pthread_cond_t wait;
     pthread_cond_t ready;
-    pthread_mutex_t mm_mutex;  
+    pthread_mutex_t mm_mutex;
+    int ocupado;  
 } shared_mem;
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -165,7 +167,6 @@ void reavaliar_prioridade(){ //TASK MANAGER
 
 void add_task(task added_task){ //TASK MANAGER
 
-    int maxwait = atoi(max_wait);
     int full = 0;
 
     //printf("Adding task %d\n" , added_task.id);
@@ -189,7 +190,10 @@ void add_task(task added_task){ //TASK MANAGER
 //TEMOS DE SEPARAR EM VCPU_MIN E VCPU_MAX PARA SER MAIS FACIL
 void *vcpu_min(void *u){
     
+    //DEVEMOS TER O TEMPO EM QUE VAI ESTAR LIVRE, OU SEJA, TEMPO DE QUANDO RECEBES A TAREFA + TEMPO DE PROCESSAMENTO DO VCPU
+    
     int capac_proc = 0;
+    int id = *((int*)u);
 
     if(my_sharedm->capac_proc1 > my_sharedm->capac_proc2)
         capac_proc = my_sharedm->capac_proc2;
@@ -198,8 +202,7 @@ void *vcpu_min(void *u){
 
     while(finish_vcpumin == 0){
         //pthread_cond_wait(&tarefa) fazer aqui uma variavel de condiçao ate receber a tarefa pelo unamed pipe.
-        int capac_proc;
-        int id = *((int*)u);
+		my_sharedm[id].ocupado++;
         
         
         double time = 0;
@@ -221,6 +224,7 @@ void *vcpu_min(void *u){
             write_file("%s:Task finished successfully.\n");
             my_sharedm[id].tasks_executed++;
             my_sharedm[id].total_time += time;
+            my_sharedm[id].ocupado--;
         }
     }
     pthread_exit(NULL);
@@ -230,19 +234,18 @@ void *vcpu_min(void *u){
 void * vcpu_max(void *m){
 
     printf("cheguei !!! \n");
-    int capacproc = 0;
-
+    int capac_proc = 0;
+ 	int id = *((int*)m);
+ 	
     if(my_sharedm->capac_proc1 < my_sharedm->capac_proc2)
-        capacproc = my_sharedm->capac_proc2;
+        capac_proc = my_sharedm->capac_proc2;
     else{
-        capacproc = my_sharedm->capac_proc1;
+        capac_proc = my_sharedm->capac_proc1;
 	}
 	
 	while(finish_vcpumax == 0){
         //pthread_cond_wait(&tarefa) fazer aqui uma variavel de condiçao ate receber a tarefa pelo unamed pipe.
-        int capac_proc;
-        int id = *((int*)m);
-
+		my_sharedm[id].ocupado++;
         //determinar o tempo que demora, se for menor que o tempo maximo da task removemos a task.
         //realizar a task que tem priority 1
         double time = 0;
@@ -268,6 +271,7 @@ void * vcpu_max(void *m){
             write_file("%s:Task finished successfully.\n");
             my_sharedm[id].tasks_executed++;
             my_sharedm[id].total_time += time;
+            my_sharedm[id].ocupado--;
         }
     }
     pthread_exit(NULL);
@@ -467,7 +471,18 @@ int read_file() {
 }
 
 void * thread_dispatcher() {
+ //unamed pipe capaz de ter de usar malloc.
+ //capaz de usar pthread_mutex_lock
+ //enviar sempre o que tem menor prioridade.
+while(1){
+	for(int i = 0 ; i < edge_servers ; i++){
+		if(my_sharedm[i].ocupado == 0){
+			//printf("%s esta livre...\n",my_sharedm[i].name);
+		}
+	}
 
+
+} 
 pthread_exit(NULL);
 
 }
@@ -501,6 +516,8 @@ void edge_server(int edge_id) {
     int received_msg = 0;
     int flag_change = 0;
 
+	my_sharedm[edge_id].ocupado = 0;
+	
     mq_msg msg1;
     msg1.mtype = 3;
     msg1.number = 0;
@@ -536,6 +553,8 @@ void edge_server(int edge_id) {
             }*/ //ESTA CORRETO MAS SE ESTIVER ISTO AQUI FICA PRESO PORQUE NAO TERMINAMOS OS VCPUS.
 
             msgrcv(mq, &msg1, sizeof(msg1), 2, 0);
+            
+            my_sharedm[edge_id].maintenance_done++;
             printf("%s just finished maintenance! ... \n" , my_sharedm[edge_id].name);
 
 		if(current_flag != my_sharedm[edge_id].nivel_perf && my_sharedm[edge_id].nivel_perf != -1){
@@ -576,11 +595,13 @@ void task_manager() { //TASK MANAGER
     int x = 0;
     int id_scheduler = 1;
     pthread_t thread_sched;
+    pthread_t thread_disp;
 	
 	ignore_signal();
     num_tasks = malloc(my_sharedm->queuepos * sizeof(task));
     
     pthread_create(&thread_sched, NULL, thread_scheduler, (void *) &id_scheduler);
+    pthread_create(&thread_disp, NULL, thread_dispatcher, NULL);
 	
 
     for (int i = 0 ; i < my_sharedm->edgeservers ; i++) {
