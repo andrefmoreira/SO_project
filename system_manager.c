@@ -41,7 +41,8 @@ typedef struct {
 	int queuepos;
 	int maxwait;
 	int edgeservers;
-    int alt_receber_tarefa; //o que e isto?
+    int ready_time_min; 
+    int ready_time_max; 
     int nivel_perf;
     char name[64];
     int capac_proc1;
@@ -50,12 +51,12 @@ typedef struct {
     int tasks_executed;
     double total_time;
     int maintenance_done;
-    pthread_cond_t wait;
     pthread_cond_t ready;
     pthread_mutex_t mm_mutex;
     int ocupado;  
 } shared_mem;
 
+pthread_mutex_t tasks = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 sem_t *semaphore , *sem_pipe , *sem_mq , *sem_mm;
 pthread_cond_t  cond_var = PTHREAD_COND_INITIALIZER;
@@ -77,6 +78,7 @@ int mq;
 int shmid;
 int end = 0;
 int tasks_executed = 0;
+int **un_pipe;
 double tempo_total = 0;
 struct task *num_tasks;
 
@@ -123,7 +125,7 @@ void delete_task(int indice ){ //TASK MANAGER
 
 void reavaliar_prioridade(){ //TASK MANAGER
 
-
+    pthread_mutex_lock(&tasks); 
     //printf("reavaliating priority\n");
     int priority = 1;
     
@@ -148,19 +150,22 @@ void reavaliar_prioridade(){ //TASK MANAGER
         }
         num_tasks[i].time = clock() - num_tasks[i].time;
 
+        num_tasks[i].priority = priority;
+
         if(num_tasks[i].time > num_tasks[i].temp_max){
             write_file("%s:Max time has passed! Removing task...\n");
             delete_task(i);
         }
-
-        num_tasks[i].priority = priority;
     }
 	
+    //DEBUG FOR REAVALIATION OF TASKS
 	//printf("After reavaliating\n");
-	for(int i = 0 ; i < my_sharedm->length ; i++){
-    	//printf("TASK ID %f , PRIORITY %d ||",num_tasks[i].temp_max , num_tasks[i].priority);
+	/*for(int i = 0 ; i < my_sharedm->length ; i++){
+    	printf("TASK ID %f , PRIORITY %d ||",num_tasks[i].temp_max , num_tasks[i].priority);
     }
-	printf("\n");
+	printf("\n");*/
+
+    pthread_mutex_unlock(&tasks);
 }
 
 
@@ -177,6 +182,7 @@ void add_task(task added_task){ //TASK MANAGER
     }
 
     if(full == 0){
+
         num_tasks[my_sharedm->length] = added_task;
     	//printf("%d\n" , num_tasks[length].id); 
     	//printf("%d\n" , length);
@@ -410,7 +416,6 @@ void init(int n_servers){
     pthread_mutex_init(&my_sharedm->mm_mutex, &maintenance_mutex);
 
     /* Initialize condition variables. */
-    pthread_cond_init(&my_sharedm->wait, &maintenance_var);
     pthread_cond_init(&my_sharedm->ready, &maintenance_var);    
     
 }     
@@ -470,17 +475,57 @@ int read_file() {
     return num_servers;
 }
 
+
+void next_task(){
+    int min = 0;
+    task t;
+    
+    pthread_mutex_lock(&tasks);
+    for(int i = 0 ; i < my_sharedm->length ; i++){
+        
+        if(num_tasks[i].priority < min && num_tasks[i].priority > 0){
+            min = num_tasks[i].priority;
+            t = num_tasks[i];
+        }
+
+    }
+
+    for(int i = 0 ; i < edge_servers ; i++){
+        if(my_sharedm[i].nivel_perf == 0 && my_sharedm->ocupado != 1){
+            write(un_pipe[i][0] , &t , sizeof(task));
+            //mandamos task
+            //vou querer mudar a verificacao de ocupado.
+            //DUVIDA: quando enviar pelo unamed pipe como e que sei qual dos vcpus e que esta a receber??
+        }
+        else if(my_sharedm[i].nivel_perf == 1 && my_sharedm->ocupado != 2){
+            //mandamos task
+            write(un_pipe[i][0] , &t , sizeof(task));
+        }
+    }
+
+    pthread_mutex_unlock(&tasks);
+}
+
 void * thread_dispatcher() {
+
+
+un_pipe = (int**) malloc(edge_servers * sizeof(int*));
+
+for (int i = 0; i < edge_servers; ++i) {
+    un_pipe[i] = (int*) malloc(2*sizeof(int));
+}
+
+for (int i = 0; i < edge_servers; ++i) {
+    pipe(un_pipe[i]);
+}
+
  //unamed pipe capaz de ter de usar malloc.
  //capaz de usar pthread_mutex_lock
  //enviar sempre o que tem menor prioridade.
-while(1){
-	for(int i = 0 ; i < edge_servers ; i++){
-		if(my_sharedm[i].ocupado == 0){
-			//printf("%s esta livre...\n",my_sharedm[i].name);
-		}
-	}
 
+while(1){
+
+    next_task();    
 
 } 
 pthread_exit(NULL);
@@ -499,7 +544,6 @@ void * thread_scheduler(void *x){
     while(end == 0){
     
 		read_pipe();
-
         printf("task %d just arrived\n" , t2.id);
         add_task(t2);
 
@@ -512,7 +556,7 @@ void * thread_scheduler(void *x){
 void edge_server(int edge_id) {
 
 	ignore_signal();
-    //pthread_cond_signal(&my_sharedm->ready); 
+    pthread_cond_signal(&my_sharedm->ready); 
     int received_msg = 0;
     int flag_change = 0;
 
@@ -526,7 +570,7 @@ void edge_server(int edge_id) {
  
     pthread_t thread_vcpu[2];
     pthread_create(&thread_vcpu[0], NULL, vcpu_min , (void *) &edge_id); 
-    int current_flag = my_sharedm[edge_id].alt_receber_tarefa;
+    int current_flag = my_sharedm[edge_id].nivel_perf;
     
     while(1){ 
 
@@ -574,7 +618,7 @@ void edge_server(int edge_id) {
 		if(current_flag != my_sharedm[edge_id].nivel_perf){
 			current_flag = my_sharedm[edge_id].nivel_perf;
 			flag_change++;
-		} //NAO TESTEI.
+		}
     	
     	if(current_flag == 1 && flag_change == 1){
             pthread_create(&thread_vcpu[1], NULL, vcpu_max, (void *) &edge_id);
@@ -649,7 +693,6 @@ void monitor() {
 void *maintenance_thread(){
 
 mq_msg msg;
-//pthread_cond_wait(&my_sharedm->wait , &my_sharedm->mm_mutex);
 
 while(1){
 
@@ -678,18 +721,22 @@ pthread_exit(NULL);
 
 
 
-void maintenance_manager(int num_servers) {
+void maintenance_manager() {
 
 ignore_signal();
- 
-pthread_t thread_maintenance[num_servers - 1];
+
+
+for(int i = 0 ; i < edge_servers ; i++){
+	pthread_cond_wait(&my_sharedm->ready , &my_sharedm->mm_mutex);
+}
+pthread_t thread_maintenance[edge_servers - 1];
     
 
-for(int i = 0 ; i < num_servers - 1 ; i++ ){
+for(int i = 0 ; i < edge_servers - 1 ; i++ ){
 	pthread_create(&thread_maintenance[i], NULL, maintenance_thread , NULL);
 }
 
-for(int i = 0 ; i < num_servers - 1 ; i++)
+for(int i = 0 ; i < edge_servers - 1 ; i++)
  	pthread_join(thread_maintenance[i],NULL);
 }
 
@@ -777,7 +824,7 @@ int main() {
 	if(fork() == 0) {
         write_file("%s:Process Maintenance Manager created.\n");
 
-        maintenance_manager(edge_servers);
+        maintenance_manager();
         exit(0);
     }	
 
