@@ -53,6 +53,7 @@ typedef struct {
     int maintenance_done;
     pthread_cond_t ready;
     pthread_mutex_t mm_mutex;
+    pthread_mutex_t shm_mutex;
     int ocupado;  
 } shared_mem;
 
@@ -77,7 +78,6 @@ int fd;
 int mq;
 int shmid;
 int end = 0;
-int tasks_executed = 0;
 int **un_pipe;
 double tempo_total = 0;
 struct task *num_tasks;
@@ -314,26 +314,40 @@ void finish(){
     exit(0);
 }
 
+
 void stats(){
 
-	//meter tudo na shared memory??? nao sei muito bem como ter acesso aos valores que precisamos aqui.
-    char phrase[64];
+	int total_tasks = 0;
+    char phrase[128];
     
-	write_file("\n%s:Signal SIGTSTP received ... showing stats! \n");
+
 	
-    sprintf(phrase, "Tasks executed: %d \n" , tasks_executed);
+    for(int i = 0 ; i < edge_servers ; i++){
+        sprintf(phrase,"%s:\n\nTasks executed: %d\nMaintenances done:%d\n\n", my_sharedm[i].name , my_sharedm[i].tasks_executed , my_sharedm[i].maintenance_done);
+        total_tasks += my_sharedm[i].tasks_executed;
+        write_file(phrase);
+    }
+
+    sprintf(phrase, "Tasks executed: %d \n" , total_tasks);
     write_file(phrase);
 
-    char string[64];
     double average_time = 0;
 
-    average_time = tempo_total / tasks_executed;
-    sprintf(string, "Average response time: %lf \n", average_time);
-    write_file(string);
+    average_time = my_sharedm->total_time / total_tasks;
+    sprintf(phrase, "Average response time: %lf \n", average_time);
+    write_file(phrase);
 
-    //FALTA COISAS AQUI
-    sprintf(string, "Number of tasks that have not been executed: %d \n" , my_sharedm->length);
-    write_file(string);
+    sprintf(phrase, "Number of tasks that have not been executed: %d \n\n" , my_sharedm->length);
+    write_file(phrase);
+
+}
+
+
+void stats_signal(){
+
+	write_file("\n%s:Signal SIGTSTP received ... showing stats! \n");
+	
+	stats();
 
 }
 
@@ -343,7 +357,7 @@ void read_pipe(){
 	char aux[128];
 	
 	while(1){
-	//read first 4 bytes and check if it's EXIT
+
 	sem_wait(sem_pipe);
     	if(read(fd, &text_pipe, sizeof(text_pipe)) == -1){
     		write_file("Error reading pipe.\n");
@@ -390,6 +404,7 @@ void read_pipe(){
 void init(int n_servers){
 	
 	pthread_mutexattr_t maintenance_mutex;
+	pthread_mutexattr_t shm;
 	pthread_condattr_t maintenance_var;
 
     sem_unlink("SEMAPHORE");
@@ -407,6 +422,9 @@ void init(int n_servers){
     /* Initialize attribute of mutex. */
     pthread_mutexattr_init(&maintenance_mutex);
     pthread_mutexattr_setpshared(&maintenance_mutex, PTHREAD_PROCESS_SHARED);
+    
+    pthread_mutexattr_init(&shm);
+    pthread_mutexattr_setpshared(&shm, PTHREAD_PROCESS_SHARED);
 
     /* Initialize attribute of condition variable. */
     pthread_condattr_init(&maintenance_var);
@@ -414,6 +432,7 @@ void init(int n_servers){
 
     /* Initialize mutex. */
     pthread_mutex_init(&my_sharedm->mm_mutex, &maintenance_mutex);
+    pthread_mutex_init(&my_sharedm->shm_mutex, &shm);
 
     /* Initialize condition variables. */
     pthread_cond_init(&my_sharedm->ready, &maintenance_var);    
@@ -475,35 +494,94 @@ int read_file() {
     return num_servers;
 }
 
+double check_time(int n , int proc_vcpu){
+	
+	double time = 0;
+	
+    time = ((double)num_tasks[n].num_instr * 1000) / (proc_vcpu * 1000000);
+    num_tasks[n].time = clock() - num_tasks[n].time;
+    time = time + num_tasks[n].time;
+
+	return time;
+}
+
 
 void next_task(){
+
     int min = 0;
+    int task_sent = 0;
+    int task_index = 0;
     task t;
+    double time = 0;
+
     
-    pthread_mutex_lock(&tasks);
-    for(int i = 0 ; i < my_sharedm->length ; i++){
-        
-        if(num_tasks[i].priority < min && num_tasks[i].priority > 0){
-            min = num_tasks[i].priority;
-            t = num_tasks[i];
-        }
-
-    }
-
-    for(int i = 0 ; i < edge_servers ; i++){
-        if(my_sharedm[i].nivel_perf == 0 && my_sharedm->ocupado != 1){
-            write(un_pipe[i][0] , &t , sizeof(task));
-            //mandamos task
-            //vou querer mudar a verificacao de ocupado.
-            //DUVIDA: quando enviar pelo unamed pipe como e que sei qual dos vcpus e que esta a receber??
-        }
-        else if(my_sharedm[i].nivel_perf == 1 && my_sharedm->ocupado != 2){
-            //mandamos task
-            write(un_pipe[i][0] , &t , sizeof(task));
-        }
-    }
-
-    pthread_mutex_unlock(&tasks);
+    while(1){
+    
+    	pthread_mutex_lock(&tasks);
+    	for(int i = 0 ; i < my_sharedm->length ; i++){
+        	
+        	if(num_tasks[i].priority < min && num_tasks[i].priority > 0){
+            	min = num_tasks[i].priority;
+            	t = num_tasks[i];
+            	task_index = i;
+        	}
+	
+    	}
+	
+    	for(int i = 0 ; i < edge_servers ; i++){
+        	if(my_sharedm[i].nivel_perf == 0){
+        		if(my_sharedm[i].ready_time_min < clock()){
+     
+        			time = check_time(task_index , my_sharedm[i].capac_proc1);
+        			
+        			if(time > t.temp_max){
+        				//mandar um signal ao vcpu.
+        				close(un_pipe[i][0]);
+        				
+            			write(un_pipe[i][1] , &t , sizeof(task));
+            			task_sent++;
+            			break;
+            		}
+				}
+        	}
+        	else if(my_sharedm[i].nivel_perf == 1){
+            	if(my_sharedm[i].ready_time_min < clock() && task_sent == 0){
+            		//SOMOS CAPAZES DE TER DE POR UM SEMAFORO SEMPRE QUE QUEREMOS LER OU ESCREVER NA SHAREDM
+        			time = check_time(task_index , my_sharedm[i].capac_proc1);
+        			
+        			if(time > t.temp_max){
+        				//mandar um signal ao vcpu.
+        				close(un_pipe[i][0]);
+        				
+            			write(un_pipe[i][1] , &t , sizeof(task));
+            			task_sent++;
+            			break;
+            		}
+            	}
+            	else if(my_sharedm[i].ready_time_max < clock()){
+            		
+        			time = check_time(task_index , my_sharedm[i].capac_proc2);
+        			
+        			if(time > t.temp_max){
+        				//mandar um signal ao vcpu.
+        				close(un_pipe[i][0]);
+        				
+            			write(un_pipe[i][1] , &t , sizeof(task));
+            			task_sent++;
+            			break;
+            		}
+            	}
+        	}
+    	}
+		
+		if(task_sent == 0){
+			write_file("Task can't be done before time limit... deleting task...!\n");
+			delete_task(task_index);
+		}
+		
+		task_sent = 0;
+    	pthread_mutex_unlock(&tasks);
+  }
 }
 
 void * thread_dispatcher() {
@@ -519,9 +597,6 @@ for (int i = 0; i < edge_servers; ++i) {
     pipe(un_pipe[i]);
 }
 
- //unamed pipe capaz de ter de usar malloc.
- //capaz de usar pthread_mutex_lock
- //enviar sempre o que tem menor prioridade.
 
 while(1){
 
@@ -557,6 +632,10 @@ void edge_server(int edge_id) {
 
 	ignore_signal();
     pthread_cond_signal(&my_sharedm->ready); 
+    
+    my_sharedm[edge_id].ready_time_min = 0;
+    my_sharedm[edge_id].ready_time_max = 0;
+    
     int received_msg = 0;
     int flag_change = 0;
 
@@ -724,7 +803,7 @@ pthread_exit(NULL);
 void maintenance_manager() {
 
 ignore_signal();
-
+pthread_cond_signal(&my_sharedm->ready); 
 
 for(int i = 0 ; i < edge_servers ; i++){
 	pthread_cond_wait(&my_sharedm->ready , &my_sharedm->mm_mutex);
@@ -750,7 +829,7 @@ int main() {
     char *tokens;   
 
     signal(SIGINT, finish);
-    signal(SIGTSTP, stats);
+    signal(SIGTSTP, stats_signal);
 	
     log_file  = fopen("log_file.txt", "w");
     fclose(log_file);
@@ -828,6 +907,9 @@ int main() {
         exit(0);
     }	
 
+
+	pthread_cond_wait(&my_sharedm->ready , &my_sharedm->mm_mutex);
+	
     if(fork() == 0){
         write_file("%s:Process Monitor created.\n");
 
