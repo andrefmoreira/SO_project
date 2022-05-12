@@ -41,30 +41,37 @@ typedef struct {
 	int queuepos;
 	int maxwait;
 	int edgeservers;
-    double ready_time_min; 
-    double ready_time_max; 
     int nivel_perf;
     char name[64];
     int capac_proc1;
     int capac_proc2;
     int length;
     int tasks_executed;
+    double ready_time_min;
+    double ready_time_max;
     double total_time;
+    double sleep_min;
+    double sleep_max;
     int maintenance_done;
     int wait;
+    int busy;
+    int free;
     pthread_cond_t ready;
-    pthread_cond_t ready_min;
     pthread_mutex_t mm_mutex;
     pthread_mutex_t shm_mutex;
-    pthread_mutex_t min_mutex;
 } shared_mem;
 
 pthread_mutex_t tasks = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t min_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t max_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t edge_mutex = PTHREAD_MUTEX_INITIALIZER;
 sem_t *semaphore , *sem_pipe , *sem_mq , *sem_mm , *sem_array;
 pthread_cond_t  cond_var = PTHREAD_COND_INITIALIZER;
 pthread_cond_t  edge_var = PTHREAD_COND_INITIALIZER;
+pthread_cond_t  min_var = PTHREAD_COND_INITIALIZER;
+pthread_cond_t  max_var = PTHREAD_COND_INITIALIZER;
+
 
 shared_mem *my_sharedm;
 
@@ -81,6 +88,8 @@ int mq;
 int shmid;
 int end = 0;
 int **un_pipe;
+int ready_min = 0;
+int ready_max = 0;
 double tempo_total = 0;
 struct task *num_tasks;
 
@@ -196,19 +205,14 @@ void add_task(task added_task){ //TASK MANAGER
 
 }
 
+
 //TEMOS DE SEPARAR EM VCPU_MIN E VCPU_MAX PARA SER MAIS FACIL
 void *vcpu_min(void *u){
     
     //DEVEMOS TER O TEMPO EM QUE VAI ESTAR LIVRE, OU SEJA, TEMPO DE QUANDO RECEBES A TAREFA + TEMPO DE PROCESSAMENTO DO VCPU
-    double time = 0;
-    int capac_proc = 0;
     int id = *((int*)u);
-    task t;
-
-    if(my_sharedm->capac_proc1 > my_sharedm->capac_proc2)
-        capac_proc = my_sharedm[id].capac_proc2;
-    else
-        capac_proc = my_sharedm[id].capac_proc1;
+    my_sharedm->free++;
+   
 
     while(1){
     
@@ -223,28 +227,37 @@ void *vcpu_min(void *u){
     		pthread_mutex_unlock(&edge_mutex);
     		printf("SAI DAQUI\n");
     	}
-    	
-    	pthread_mutex_lock(&my_sharedm[id].min_mutex);
-		pthread_cond_wait(&my_sharedm[id].ready_min , &my_sharedm[id].min_mutex);
-		pthread_mutex_unlock(&my_sharedm[id].min_mutex);
+ 			
+ 		
+ 		
+ 		printf("EUZINHO A ESPERA DO SIGNAL\n");
+    	pthread_mutex_lock(&min_mutex);
+    	pthread_cond_signal(&min_var);
+    	ready_min--;
+        pthread_cond_wait(&min_var , &min_mutex);
+        pthread_mutex_unlock(&min_mutex);
+        printf("RECEBI O SIGNAL :)\n");
+        ready_min++;
+       		
+        printf("%s : task was choosen !!!\n" , my_sharedm[id].name);
 		
-		printf("RECEBI O SIGNAL\n");
-		//AINDA NAO RECEBE SINAL SEM SER NO 
-        read(un_pipe[id][0] , &t , sizeof(task));
-        printf("%s : task %d was choosen !!!\n" , my_sharedm[id].name , t.id);
+		my_sharedm[id].ready_time_min = my_sharedm[id].sleep_min + ((double) (clock()) / CLOCKS_PER_SEC);
+	
+				
+		while(((double) (clock()) / CLOCKS_PER_SEC) < my_sharedm[id].ready_time_min){
+		
+		}
 
-        time = ((double)t.num_instr * 1000) / (capac_proc * 1000000);
-        my_sharedm[id].ready_time_min = time + ((double) (clock()) / CLOCKS_PER_SEC);
+        write_file("%s:Task finished successfully.\n");
+        my_sharedm[id].tasks_executed++;
+        my_sharedm->total_time += my_sharedm[id].sleep_min;
         
-        printf(" TEMPO APOS CALCULAR %lf\n",my_sharedm[id].ready_time_min);
-
-        //sempre que acaba uma tarefa esta livre e vai chamar o thread dispatcher.
-            //perguntar como e que identificamos qual vcpu esta livre.
-            sleep(time);
-
-            write_file("%s:Task finished successfully.\n");
-            my_sharedm[id].tasks_executed++;
-            my_sharedm->total_time += time;
+        my_sharedm[id].busy--;
+    	my_sharedm->free++;
+		printf("VCPU MUDOU O TOTAL DO FREE PAA : %d\n",my_sharedm->free);    	
+    	pthread_mutex_lock(&my_sharedm->mm_mutex);
+        pthread_cond_signal(&my_sharedm->ready);
+        pthread_mutex_unlock(&my_sharedm->mm_mutex);
     }
     pthread_exit(NULL);
 }
@@ -253,55 +266,55 @@ void *vcpu_min(void *u){
 void * vcpu_max(void *m){
 
     printf("VCPU_MAX was activated !!! \n");
-    int capac_proc = 0;
  	int id = *((int*)m);
-    double time = 0;
-    task t;
- 	
-    if(my_sharedm->capac_proc1 < my_sharedm->capac_proc2)
-        capac_proc = my_sharedm[id].capac_proc2;
-    else{
-       capac_proc = my_sharedm[id].capac_proc1;
-	}
+ 	my_sharedm->free++;
 	
-	while(1){
-	
-		if(my_sharedm->wait == 1){
-		
-			pthread_mutex_lock(&edge_mutex);
+    while(1){
+    
+    	if(my_sharedm[id].wait == 1){
+    	
+    		printf("ENTREI AQUI\n");
+    		pthread_mutex_lock(&edge_mutex);
     		pthread_cond_signal(&edge_var);
     		pthread_mutex_unlock(&edge_mutex);
-    		
-    		
+    		printf("VOU ESPERAR\n");
     		pthread_mutex_lock(&edge_mutex);
     		pthread_cond_wait(&edge_var , &edge_mutex);
     		pthread_mutex_unlock(&edge_mutex);
+    		printf("SAI DAQUI\n");
+    		
     	}
-        //pthread_cond_wait(&tarefa) fazer aqui uma variavel de condiçao ate receber a tarefa pelo unamed pipe.	
-        pthread_mutex_lock(&my_sharedm[id].mm_mutex);
-        pthread_cond_wait(&my_sharedm[id].ready , &my_sharedm[id].mm_mutex);
-        pthread_mutex_unlock(&my_sharedm[id].mm_mutex);
+ 			
+ 		
+ 		
+ 		printf("EUZINHO A ESPERA DO SIGNAL\n");
+    	pthread_mutex_lock(&max_mutex);
+    	pthread_cond_signal(&max_var);
+    	ready_max--;
+        pthread_cond_wait(&max_var , &max_mutex);
+        pthread_mutex_unlock(&max_mutex);
+        printf("RECEBI O SIGNAL :)\n");
+        ready_max++;
+       		
+        printf("%s : task was choosen !!!\n" , my_sharedm[id].name);
 		
-        read(un_pipe[id][0] , &t , sizeof(task));
+		my_sharedm[id].ready_time_max = my_sharedm[id].sleep_max + ((double) (clock()) / CLOCKS_PER_SEC);
+	
+				
+		while(((double) (clock()) / CLOCKS_PER_SEC) < my_sharedm[id].ready_time_max){
+		
+		}
 
-        //tempo minimo e o tempo que num momento T o vcpu demora a ficar livre, ou seja vcpu ta ocupado, no melhor dos casos no momento T+X o vcpu esta livre, ou seja temp min = X.
-
-        time = ((double)t.num_instr * 1000) / (capac_proc * 1000000);  //O CLOCK TA DIFERENTE ENTRE PROCESSOS
-        my_sharedm[id].ready_time_max = time + ((double) (clock()) / CLOCKS_PER_SEC);
-
-
-
-            //VCPU SO VAI FICAR A DAR READ AO UNAMED PIPE ATE RECEBER UMA MENSAGEM, DEPOIS FAZ A TAREFA E VOLTA A ESPERAR POR UMA NOVA.
-            //sempre que acaba uma tarefa esta livre e vai chamar o thread dispatcher.
-
-            pthread_mutex_lock(&mutex);
-            pthread_cond_signal(&cond_var);
-            pthread_mutex_unlock(&mutex);
-            //perguntar como e que identificamos qual vcpu esta livre.
-            write_file("%s:Task finished successfully.\n");
-            my_sharedm[id].tasks_executed++;
-            my_sharedm[id].total_time += time;
+        write_file("%s:Task finished successfully.\n");
+        my_sharedm[id].tasks_executed++;
+        my_sharedm->total_time += my_sharedm[id].sleep_max;
         
+        my_sharedm[id].busy--;
+    	my_sharedm->free++;
+		printf("VCPU MUDOU O TOTAL DO FREE PAA : %d\n",my_sharedm->free);    	
+    	pthread_mutex_lock(&my_sharedm->mm_mutex);
+        pthread_cond_signal(&my_sharedm->ready);
+        pthread_mutex_unlock(&my_sharedm->mm_mutex);
     }
     pthread_exit(NULL);
     
@@ -465,16 +478,13 @@ void init(int n_servers){
 
     /* Initialize mutex. */
     //ver isto
-    for(int i = 0 ; i < edge_servers ; i++){
-    	pthread_mutex_init(&my_sharedm[i].mm_mutex, &maintenance_mutex);
-    	pthread_mutex_init(&my_sharedm[i].shm_mutex, &shm);
-    	pthread_mutex_init(&my_sharedm[i].min_mutex, &vcpu_min_mutex);
-    }
+    pthread_mutex_init(&my_sharedm->mm_mutex, &maintenance_mutex);
+    pthread_mutex_init(&my_sharedm->shm_mutex, &shm);
 
 
     /* Initialize condition variables. */
     pthread_cond_init(&my_sharedm->ready, &maintenance_var);    
-    pthread_cond_init(&my_sharedm->ready_min , &min_var);
+
     
 }     
     
@@ -533,6 +543,56 @@ int read_file() {
     return num_servers;
 }
 
+int check_time(int index , task t2){
+	
+	double time = 0;
+	int capac = 0;
+	int capacmax = 0;
+	
+	if(my_sharedm[index].capac_proc1 < my_sharedm[index].capac_proc2){
+		capac = my_sharedm[index].capac_proc1;
+		capacmax = my_sharedm[index].capac_proc2;
+	}
+	else{
+		capac = my_sharedm[index].capac_proc2;
+		capacmax = my_sharedm[index].capac_proc1;
+	}
+
+	if(my_sharedm[index].nivel_perf == 0){
+		
+			
+		time = ((double)t2.num_instr * 1000) / (capac * 1000000);
+		time = time + ((double) (clock()) / CLOCKS_PER_SEC);
+	
+		if(time < t2.temp_max){
+			my_sharedm[index].sleep_min = time;
+			return 1;
+		}
+	}
+	
+	else{
+	
+		time = ((double)t2.num_instr * 1000) / (capac * 1000000);
+		time = time + ((double) (clock()) / CLOCKS_PER_SEC);
+	
+		if(time < t2.temp_max){
+			my_sharedm[index].sleep_min = time;
+			return 1;
+		}
+		
+		time = ((double)t2.num_instr * 1000) / (capacmax * 1000000);
+		time = time + ((double) (clock()) / CLOCKS_PER_SEC);	
+		
+		if(time < t2.temp_max){
+			my_sharedm[index].sleep_max = time;
+			return 1;
+		}
+	
+	}
+	
+	return 0;
+}
+
 
 void next_task(){
 
@@ -543,11 +603,19 @@ void next_task(){
    
     while(1){
     	if(my_sharedm->length > 0){
-    	//pthread_mutex_lock(&tasks);
+    		if(my_sharedm->free <= 0){
+    			printf("tou aqui\n");
+    			pthread_mutex_lock(&my_sharedm->mm_mutex);
+        		pthread_cond_wait(&my_sharedm->ready , &my_sharedm->mm_mutex);
+        		pthread_mutex_unlock(&my_sharedm->mm_mutex);
+    		}
+    		
     		min = num_tasks[0].priority;
     		t4 = num_tasks[0];
         	task_index = 0;
 
+
+			//meter semaforo aqui para mexer no array.
     		for(int i = 0 ; i < my_sharedm->length ; i++){
         		
         		if(num_tasks[i].priority < min && num_tasks[i].priority > 0){
@@ -559,51 +627,43 @@ void next_task(){
     		}
     		
     		for(int i = 0 ; i < edge_servers ; i++){
-        		if(my_sharedm[i].nivel_perf == 0 && task_sent == 0){
+        		if(my_sharedm[i].nivel_perf == 0 && my_sharedm[i].busy == 0 && task_sent == 0){
         		
-        			if(my_sharedm[i].ready_time_min <= ((double) (clock()) / CLOCKS_PER_SEC)){
-        				printf(" SERVER: %d , TIME VCPU: %lf |||||| clock: %lf\n",   i ,my_sharedm[i].ready_time_min , ((double) (clock()) / CLOCKS_PER_SEC));
-                    	write(un_pipe[i][1] , &t4 , sizeof(task));
-                    	
-                    	pthread_mutex_lock(&my_sharedm[i].min_mutex);
-                    	pthread_cond_signal(&my_sharedm[i].ready_min); 
-                    	pthread_mutex_unlock(&my_sharedm[i].min_mutex);
-                    	
-                    	task_sent++;
-                    	printf("TASK WAS SENT !!!! \n");
-                    	delete_task(task_index);
-					}
+        			if(check_time(i , t4)){
+        				write(un_pipe[i][1] , &t4 , sizeof(task));
+        				printf("MANDEI\n");
+        				my_sharedm->free--;
+						my_sharedm[i].busy++;
+        				task_sent++;
+        				delete_task(task_index);
+        			}
         		}
         		
-        		else if(my_sharedm[i].nivel_perf == 1 && task_sent == 0){
-            		if(my_sharedm[i].ready_time_min <= ((double) (clock()) / CLOCKS_PER_SEC)){
-            			//SOMOS CAPAZES DE TER DE POR UM SEMAFORO SEMPRE QUE QUEREMOS LER OU ESCREVER NA SHAREDM
-                    	write(un_pipe[i][1] , &t4 , sizeof(task));
-						
-						pthread_mutex_lock(&my_sharedm[i].min_mutex);
-                    	pthread_cond_signal(&my_sharedm[i].ready_min); 
-                    	pthread_mutex_unlock(&my_sharedm[i].min_mutex);
-                    	
-                    	task_sent++;
-                    	delete_task(task_index);
-            		}
-            		else if(my_sharedm[i].ready_time_max <= ((double) (clock()) / CLOCKS_PER_SEC)){
-                    	//close(un_pipe[i][0]);
-                    	write(un_pipe[i][1] , &t4 , sizeof(task));
-						
-						pthread_mutex_lock(&my_sharedm[i].mm_mutex);
-                    	pthread_cond_signal(&my_sharedm[i].ready); 
-                    	pthread_mutex_unlock(&my_sharedm[i].mm_mutex);
-                    	
-                    	task_sent++;
-                    	delete_task(task_index);
-            		}
+        		else if(my_sharedm[i].nivel_perf == 1 && (my_sharedm[i].busy == 1 || my_sharedm[i].busy == 0) && task_sent == 0){
+        		
+        			if(check_time(i , t4)){
+        				write(un_pipe[i][1] , &t4 , sizeof(task));
+        				printf("MANDEI\n");
+        				my_sharedm->free--;
+						my_sharedm[i].busy++;
+        				task_sent++;
+        				delete_task(task_index);
+        			}
         		}
     		}
 			
 			if(task_sent == 0){
-				write_file("Task can't be done before time limit... deleting task...!\n");
-				delete_task(task_index);
+				int in_time = 0;
+				
+				for(int i = 0 ; i < edge_servers ; i ++ ){
+					if(check_time(i , t4))
+						in_time++;
+				}
+				
+				if(in_time == 0){
+					write_file("Task can't be done before time limit... deleting task...!\n");
+					delete_task(task_index);
+				}
 			}
 		
 			task_sent = 0;
@@ -643,17 +703,61 @@ void * thread_scheduler(void *x){
 }
 
 
+void *receive_task(void *k){
+	
+	int index1 = *((int*)k);
+	task task1;
+	
+	while(1){
+		
+		read(un_pipe[index1][0] , &task1 , sizeof(task));
+		
+		printf("VALOR DO READY_MIN %d\n",ready_min);
+		printf("Mudei o valor do free para : %d\n e do busy para : %d\n",my_sharedm->free , my_sharedm[index1].busy);
+		
+    	if(my_sharedm[index1].ready_time_min <= ((double) (clock()) / CLOCKS_PER_SEC) && my_sharedm[index1].nivel_perf != -1){
+			
+			if(ready_min == 0){
+			
+			pthread_mutex_lock(&min_mutex);
+        	pthread_cond_wait(&min_var , &min_mutex); 
+        	pthread_mutex_unlock(&min_mutex);
+			
+			}
+			printf("entrei aqui\n");
+			pthread_mutex_lock(&min_mutex);
+        	pthread_cond_signal(&min_var); 
+        	pthread_mutex_unlock(&min_mutex);
+        	
+    	}
+    	else if(my_sharedm[index1].ready_time_max <= ((double) (clock()) / CLOCKS_PER_SEC) && my_sharedm[index1].nivel_perf == 1){
+			if(ready_max == 0){
+			
+			pthread_mutex_lock(&max_mutex);
+        	pthread_cond_wait(&max_var , &min_mutex); 
+        	pthread_mutex_unlock(&min_mutex);
+			
+			}
+			printf("entrei aqui1\n");
+			pthread_mutex_lock(&max_mutex);
+        	pthread_cond_signal(&max_var); 
+        	pthread_mutex_unlock(&max_mutex);
+	
+    	}
+	}
+}
+
+
 void edge_server(int edge_id) {
 
 	ignore_signal();
+	
 	
 	pthread_mutex_lock(&my_sharedm->mm_mutex);
     pthread_cond_signal(&my_sharedm->ready); 
     pthread_mutex_unlock(&my_sharedm->mm_mutex);
     
     my_sharedm[edge_id].wait = 0;
-    my_sharedm[edge_id].ready_time_min = 0;
-    my_sharedm[edge_id].ready_time_max = 0;
     
     int received_msg = 0;
     int flag_change = 0;
@@ -663,6 +767,8 @@ void edge_server(int edge_id) {
     msg1.number = 0;
  
     pthread_t thread_vcpu[2];
+    pthread_t thread_task;
+    pthread_create(&thread_task , NULL , receive_task , (void *) &edge_id);
     pthread_create(&thread_vcpu[0], NULL, vcpu_min , (void *) &edge_id); 
     int current_flag = my_sharedm[edge_id].nivel_perf;
     
@@ -671,14 +777,15 @@ void edge_server(int edge_id) {
         sem_wait(sem_mq);
 
         if(msgrcv(mq, &msg1, sizeof(msg1), 1, IPC_NOWAIT) != -1){
-
+        	
 			sem_post(sem_mq);
+			my_sharedm[edge_id].nivel_perf = -1;
             printf("%s was choosen for maintenance!...\n", my_sharedm[edge_id].name);
             received_msg++; 
             msg1.mtype = 3;
 			
 		
-			if(my_sharedm[edge_id].ready_time_min > ((double) (clock()) / CLOCKS_PER_SEC) && my_sharedm[edge_id].ready_time_max > ((double) (clock()) / CLOCKS_PER_SEC)){
+			if(my_sharedm[edge_id].busy == 2){
 			
 				my_sharedm[edge_id].wait = 1;
 				
@@ -690,7 +797,7 @@ void edge_server(int edge_id) {
 					
 				}
 			}
-			else if(my_sharedm[edge_id].ready_time_min > ((double) (clock()) / CLOCKS_PER_SEC) || my_sharedm[edge_id].ready_time_max > ((double) (clock()) / CLOCKS_PER_SEC)){
+			else if(my_sharedm[edge_id].busy == 1){
 			
 				my_sharedm[edge_id].wait = 1;
 				
@@ -700,17 +807,6 @@ void edge_server(int edge_id) {
 			}
 			 
             msgsnd(mq, &msg1, sizeof(msg1), 0);
-            
-            my_sharedm[edge_id].nivel_perf = -1;
-
-            /*if(current_flag == 1){
-                for(int i = 0 ; i < 2 ; i++)
-                    pthread_join(thread_vcpu[i],NULL);
-            }
-            else{
-                pthread_join(thread_vcpu[0],NULL);
-            }*/ //ESTA CORRETO MAS SE ESTIVER ISTO AQUI FICA PRESO PORQUE NAO TERMINAMOS OS VCPUS.
-
             msgrcv(mq, &msg1, sizeof(msg1), 2, 0);
             
             my_sharedm[edge_id].maintenance_done++;
@@ -753,6 +849,8 @@ void edge_server(int edge_id) {
         	 flag_change = 0;	 
         }	 
     }
+    
+    pthread_join(thread_task,NULL);
 
 }
 
@@ -815,6 +913,7 @@ void monitor() {
 
         if(my_sharedm->nivel_perf == 1){
             if(my_sharedm->queuepos * 0.2 >= my_sharedm->length){
+           		printf("NIVEL FOI TROCADO OUTRAVEZ \n");
             	change_level = 0;
                 for(int i = 0; i < edge_servers ; i++)
                     my_sharedm[i].nivel_perf = 0;
@@ -830,7 +929,6 @@ mq_msg msg;
 while(1){
 
 	sem_wait(sem_mm);
-	
 	int sleep_time = (rand() % (5 - 1 + 1)) + 1;
 
     msg.mtype = 1;
@@ -867,6 +965,7 @@ for(int i = 0 ; i < edge_servers ; i++){
 	pthread_cond_wait(&my_sharedm->ready , &my_sharedm->mm_mutex);
 	pthread_mutex_unlock(&my_sharedm->mm_mutex);
 }
+
 pthread_t thread_maintenance[edge_servers - 1];
     
 
