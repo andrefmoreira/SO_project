@@ -43,6 +43,7 @@ typedef struct {
 	int edgeservers;
     int nivel_perf;
     char name[64];
+    int time_min;
     int capac_proc1;
     int capac_proc2;
     int length;
@@ -630,7 +631,13 @@ void next_task(){
         		if(my_sharedm[i].nivel_perf == 0 && my_sharedm[i].busy == 0 && task_sent == 0){
         		
         			if(check_time(i , t4)){
+        			
         				write(un_pipe[i][1] , &t4 , sizeof(task));
+        				
+        				if(((double) (clock()) / CLOCKS_PER_SEC) - t4.time < my_sharedm->time_min){
+        					my_sharedm->time_min = ((double) (clock()) / CLOCKS_PER_SEC) - t4.time;
+        				} 
+        				       				
         				printf("MANDEI\n");
         				my_sharedm->free--;
 						my_sharedm[i].busy++;
@@ -642,7 +649,13 @@ void next_task(){
         		else if(my_sharedm[i].nivel_perf == 1 && (my_sharedm[i].busy == 1 || my_sharedm[i].busy == 0) && task_sent == 0){
         		
         			if(check_time(i , t4)){
+        			
         				write(un_pipe[i][1] , &t4 , sizeof(task));
+        				
+        				if(((double) (clock()) / CLOCKS_PER_SEC) - t4.time < my_sharedm->time_min){
+        					my_sharedm->time_min = ((double) (clock()) / CLOCKS_PER_SEC) - t4.time;
+        				}
+        				
         				printf("MANDEI\n");
         				my_sharedm->free--;
 						my_sharedm[i].busy++;
@@ -902,18 +915,18 @@ void monitor() {
 	
     while(end == 0){
         if(my_sharedm->queuepos * 0.8 <= my_sharedm->length && change_level == 0){
-            /*if(tempmin > max_wait) { //falta o tempmin...
+            if(my_sharedm->time_min > my_sharedm->max_wait) {
                 my_sharedm->nivel_perf = 1;
-            }*/
+            }
             for(int i = 0; i < edge_servers ; i++)
                 my_sharedm[i].nivel_perf = 1;
             change_level++;
-            printf("FOI TROCADO O NIVEL !!!!!!! \n");
+            //printf("FOI TROCADO O NIVEL !!!!!!! \n");
         }
 
         if(my_sharedm->nivel_perf == 1){
             if(my_sharedm->queuepos * 0.2 >= my_sharedm->length){
-           		printf("NIVEL FOI TROCADO OUTRAVEZ \n");
+           		//printf("NIVEL FOI TROCADO OUTRAVEZ \n");
             	change_level = 0;
                 for(int i = 0; i < edge_servers ; i++)
                     my_sharedm[i].nivel_perf = 0;
