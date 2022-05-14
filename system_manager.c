@@ -56,6 +56,9 @@ typedef struct {
     int maintenance_done;
     int wait;
     int busy;
+    int id_monitor;
+	int id_task_manager;
+	int id_maintenance_manager;
     int free;
     pthread_cond_t ready;
     pthread_mutex_t mm_mutex;
@@ -328,8 +331,11 @@ void finish(){
 	int status1 = 0;
     char phrase[64];
 
-    //vamos ter de dar kill aos threads e processos que ja nao sao precisos, parar de receber tarefas e depois esperar que as tarefas do vcpu acabem.
     write_file("\n%s:Signal SIGINT received ... waiting for last tasks to close simulator.\n"); 
+    
+    kill(my_sharedm->id_monitor,SIGKILL);
+    kill(my_sharedm->id_maintenance_manager,SIGKILL);
+        
     end = 1;
     
     while ((wait(&status1)) > 0);
@@ -915,7 +921,7 @@ void monitor() {
 	
     while(end == 0){
         if(my_sharedm->queuepos * 0.8 <= my_sharedm->length && change_level == 0){
-            if(my_sharedm->time_min > my_sharedm->max_wait) {
+            if(my_sharedm->time_min > my_sharedm->maxwait) {
                 my_sharedm->nivel_perf = 1;
             }
             for(int i = 0; i < edge_servers ; i++)
@@ -1072,6 +1078,7 @@ int main() {
     assert(strftime(s, sizeof(s), "%c", tm));
 	
 	if(fork() == 0) {
+		my_sharedm->id_maintenance_manager = getpid();
         write_file("%s:Process Maintenance Manager created.\n");
 
         maintenance_manager();
@@ -1083,6 +1090,7 @@ int main() {
 	pthread_mutex_unlock(&my_sharedm->mm_mutex);
 	
     if(fork() == 0){
+    	my_sharedm->id_monitor = getpid();
         write_file("%s:Process Monitor created.\n");
 
         monitor();
@@ -1090,14 +1098,16 @@ int main() {
     }
     
     if(fork() == 0) {
+    	my_sharedm->id_task_manager = getpid();
         write_file("%s:Process Task Manager created.\n");
         
         task_manager();
         exit(0);
     }
-
+   
 
     while ((wait(&status)) > 0);
+    
 
     return 0;
 }
