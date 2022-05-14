@@ -332,10 +332,14 @@ void * vcpu_max(void *m){
 }
 
 
+
+
 void stats(){
 
 	int total_tasks = 0;
     char phrase[128];
+    
+
 	
     for(int i = 0 ; i < edge_servers ; i++){
         sprintf(phrase,"%s:\n\nTasks executed: %d\nMaintenances done:%d\n\n", my_sharedm[i].name , my_sharedm[i].tasks_executed , my_sharedm[i].maintenance_done);
@@ -356,6 +360,8 @@ void stats(){
     write_file(phrase);
 
 }
+
+
 
 
 void finish(){
@@ -407,7 +413,6 @@ void finish(){
 	
     exit(0);
 }
-
 
 
 void stats_signal(){
@@ -528,7 +533,7 @@ void init(int n_servers){
     pthread_cond_init(&my_sharedm->shm_finish_var, &finish_var);     
 
     
-}     
+} 
     
     
 
@@ -990,7 +995,6 @@ void task_manager() { //TASK MANAGER
     while (wait(&x) > 0);
 }
 
-
 void monitor() {
 	
 	ignore_signal();
@@ -1080,8 +1084,7 @@ int main() {
     char capac1[20];
 	char capac2[20];
     char line[64];
-    char *tokens;
-    my_sharedm->finish = 0;
+    char *tokens;   
 
     signal(SIGINT, finish);
     signal(SIGTSTP, stats_signal);
