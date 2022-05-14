@@ -59,8 +59,12 @@ typedef struct {
     int id_monitor;
 	int id_task_manager;
 	int id_maintenance_manager;
+    int id_edge;
     int free;
+    int finish = 0;
     pthread_cond_t ready;
+    pthread_cond_t shm_finish_var;
+    pthread_mutex_t shm_finish_mutex;
     pthread_mutex_t mm_mutex;
     pthread_mutex_t shm_mutex;
 } shared_mem;
@@ -92,6 +96,8 @@ int mq;
 int shmid;
 int end = 0;
 int **un_pipe;
+int finish_max = 0;
+int finish_min = 0;
 int ready_min = 0;
 int ready_max = 0;
 double tempo_total = 0;
@@ -218,7 +224,7 @@ void *vcpu_min(void *u){
     my_sharedm->free++;
    
 
-    while(1){
+    while(finish_min == 0){
     
     	if(my_sharedm[id].wait == 1){
     		printf("ENTREI AQUI\n");
@@ -273,7 +279,7 @@ void * vcpu_max(void *m){
  	int id = *((int*)m);
  	my_sharedm->free++;
 	
-    while(1){
+    while(finish_max == 0){
     
     	if(my_sharedm[id].wait == 1){
     	
@@ -326,43 +332,10 @@ void * vcpu_max(void *m){
 }
 
 
-void finish(){
-
-	int status1 = 0;
-    char phrase[64];
-
-    write_file("\n%s:Signal SIGINT received ... waiting for last tasks to close simulator.\n"); 
-    
-    kill(my_sharedm->id_monitor,SIGKILL);
-    kill(my_sharedm->id_maintenance_manager,SIGKILL);
-        
-    end = 1;
-    
-    while ((wait(&status1)) > 0);
-    unlink(PIPE_NAME);
-    
-    write_file("%s:Tasks that were not completed: \n");
-
-    for(int i = 0; i < my_sharedm->length ; i++){
-        sprintf(phrase, "Task ID: %d, Task Priority: %d\n", num_tasks[i].id , num_tasks[i].priority);
-        write_file(phrase);
-    }
-
-    write_file("%s:Simulator closed.\n");
-
-    pthread_mutex_destroy(&mutex);    //falta por todos os que usamos aqui.
-    free(num_tasks);
-	
-    exit(0);
-}
-
-
 void stats(){
 
 	int total_tasks = 0;
     char phrase[128];
-    
-
 	
     for(int i = 0 ; i < edge_servers ; i++){
         sprintf(phrase,"%s:\n\nTasks executed: %d\nMaintenances done:%d\n\n", my_sharedm[i].name , my_sharedm[i].tasks_executed , my_sharedm[i].maintenance_done);
@@ -383,6 +356,59 @@ void stats(){
     write_file(phrase);
 
 }
+
+
+void finish(){
+
+	int status1 = 0;
+    char phrase[64];
+
+    my_sharedm->finish = 1;
+
+    write_file("\n%s:Signal SIGINT received ... waiting for last tasks to close simulator.\n"); 
+    
+    kill(my_sharedm->id_monitor,SIGKILL);
+    kill(my_sharedm->id_maintenance_manager,SIGKILL);
+        
+
+	pthread_mutex_lock(&my_sharedm->shm_finish_mutex);
+    pthread_cond_signal(&my_sharedm->shm_finish_var); 
+    pthread_mutex_unlock(&my_sharedm->shm_finish_mutex);
+
+    end = 1;
+    
+    while ((wait(&status1)) > 0);
+
+    void stats();
+
+    write_file("%s:Simulator closed.\n");
+
+    pthread_mutex_destroy(&mutex);
+    pthread_mutex_destroy(&edge_mutex);
+    pthread_mutex_destroy(&max_mutex);
+    pthread_mutex_destroy(&min_mutex);
+    pthread_mutex_destroy(&tasks);
+    pthread_mutex_destroy(&mutex);
+    pthread_mutex_destroy(&my_sharedm->mm_mutex);
+    pthread_mutex_destroy(&my_sharedm->shm_mutex);
+    pthread_cond_destroy(&cond_var);
+    pthread_cond_destroy(&max_var);
+    pthread_cond_destroy(&min_var);
+    pthread_cond_destroy(&edge);
+    pthread_cond_destroy(&my_sharedm->ready);
+    sem_close(semaphore);
+    sem_close(sem_pipe);
+    sem_close(sem_mq);
+    sem_close(sem_mm);
+    sem_close(sem_array);
+    shmdt(my_sharedm);
+	shmctl(shmid, IPC_RMID, NULL);
+    free(num_tasks);
+    unlink(PIPE_NAME);
+	
+    exit(0);
+}
+
 
 
 void stats_signal(){
@@ -448,7 +474,9 @@ void init(int n_servers){
 	pthread_mutexattr_t maintenance_mutex;
     pthread_mutexattr_t vcpu_min_mutex;
 	pthread_mutexattr_t shm;
+    pthread_mutexattr_t finish_mutex;
 	pthread_condattr_t maintenance_var;
+    pthread_condattr_t finish_var;
     pthread_condattr_t min_var;
 
     sem_unlink("SEMAPHORE");
@@ -472,6 +500,9 @@ void init(int n_servers){
 
     pthread_mutexattr_init(&vcpu_min_mutex);
     pthread_mutexattr_setpshared(&vcpu_min_mutex, PTHREAD_PROCESS_SHARED);
+
+    pthread_mutexattr_init(&finish_mutex);
+    pthread_mutexattr_setpshared(&finish_mutex, PTHREAD_PROCESS_SHARED);
     
     pthread_mutexattr_init(&shm);
     pthread_mutexattr_setpshared(&shm, PTHREAD_PROCESS_SHARED);
@@ -480,17 +511,22 @@ void init(int n_servers){
     pthread_condattr_init(&maintenance_var);
     pthread_condattr_setpshared(&maintenance_var, PTHREAD_PROCESS_SHARED);
 
+    pthread_condattr_init(&finish_var);
+    pthread_condattr_setpshared(&finish_var, PTHREAD_PROCESS_SHARED);
+
     pthread_condattr_init(&min_var);
     pthread_condattr_setpshared(&min_var, PTHREAD_PROCESS_SHARED);
 
     /* Initialize mutex. */
     //ver isto
     pthread_mutex_init(&my_sharedm->mm_mutex, &maintenance_mutex);
+    pthread_mutex_init(&my_sharedm->shm_finish_mutex, &finish_mutex);
     pthread_mutex_init(&my_sharedm->shm_mutex, &shm);
 
 
     /* Initialize condition variables. */
-    pthread_cond_init(&my_sharedm->ready, &maintenance_var);    
+    pthread_cond_init(&my_sharedm->ready, &maintenance_var);
+    pthread_cond_init(&my_sharedm->shm_finish_var, &finish_var);     
 
     
 }     
@@ -771,7 +807,6 @@ void edge_server(int edge_id) {
 
 	ignore_signal();
 	
-	
 	pthread_mutex_lock(&my_sharedm->mm_mutex);
     pthread_cond_signal(&my_sharedm->ready); 
     pthread_mutex_unlock(&my_sharedm->mm_mutex);
@@ -791,7 +826,7 @@ void edge_server(int edge_id) {
     pthread_create(&thread_vcpu[0], NULL, vcpu_min , (void *) &edge_id); 
     int current_flag = my_sharedm[edge_id].nivel_perf;
     
-    while(1){ 
+    while(my_sharedm->finish == 0){ 
 
         sem_wait(sem_mq);
 
@@ -863,13 +898,43 @@ void edge_server(int edge_id) {
             current_flag = my_sharedm[edge_id].nivel_perf; 
             flag_change = 0; 
        	}else if(current_flag == 0 && flag_change == 1){
-        	 pthread_join(thread_vcpu[1],NULL);
-        	 current_flag = my_sharedm[edge_id].nivel_perf;
-        	 flag_change = 0;	 
+            finish_max = 1;
+
+            if(my_sharedm[index1].ready_time_max <= ((double) (clock()) / CLOCKS_PER_SEC)){
+                pthread_join(thread_vcpu[1],NULL);
+            }
+            else
+                pthread_cancel(thread_vcpu[1]);
+
+            finish_max = 0;
+        	current_flag = my_sharedm[edge_id].nivel_perf;
+        	flag_change = 0;	 
         }	 
     }
+
+    pthread_cancel(thread_task);
     
-    pthread_join(thread_task,NULL);
+    if(my_sharedm[index1].ready_time_min <= ((double) (clock()) / CLOCKS_PER_SEC) && my_sharedm[index1].ready_time_max <= ((double) (clock()) / CLOCKS_PER_SEC)){
+        for(int i = 0 ; i < 2 ; i++){
+            pthread_join(thread_vcpu[i], NULL);
+        }
+    }
+    else if(my_sharedm[index1].ready_time_min <= ((double) (clock()) / CLOCKS_PER_SEC)){
+
+        pthread_cancel(thread_vcpu[1]);
+        pthread_join(thread_vcpu[0]);
+
+    }
+    else if(my_sharedm[index1].ready_time_max <= ((double) (clock()) / CLOCKS_PER_SEC)){
+
+        pthread_cancel(thread_vcpu[0]);
+        pthread_join(thread_vcpu[1]);
+
+    }
+    else{
+        pthread_cancel(thread_vcpu[0]);
+        pthread_cancel(thread_vcpu[1]);
+    }
 
 }
 
@@ -901,6 +966,7 @@ void task_manager() { //TASK MANAGER
     for (int i = 0 ; i < my_sharedm->edgeservers ; i++) {
 
         if(fork() == 0) {
+            my_sharedm[i].id_edge = getpid();
             write_file("%s:Process edge_server created.\n");
 
             edge_server(i);
@@ -909,8 +975,20 @@ void task_manager() { //TASK MANAGER
     
     }
 
+    pthread_mutex_lock(&my_sharedm->shm_finish_mutex);
+    pthread_cond_wait(&my_sharedm->shm_finish_var , &my_sharedm->shm_finish_mutex); 
+    pthread_mutex_unlock(&my_sharedm->shm_finish_mutex);
+
+    pthread_cancel(thread_sched);
+    pthread_cancel(thread_disp);
+
+    for(int i = 0 ; i < edge_servers ; i++){
+        if(my_sharedm[i].nivel_perf == -1){
+            kill(my_sharedm[i].id_edge,SIGKILL);
+        }
+    }
+
     while (wait(&x) > 0);
-    pthread_join(thread_sched,NULL);
 }
 
 
