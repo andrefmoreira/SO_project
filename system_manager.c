@@ -61,7 +61,7 @@ typedef struct {
 	int id_maintenance_manager;
     int id_edge;
     int free;
-    int finish = 0;
+    int finish;
     pthread_cond_t ready;
     pthread_cond_t shm_finish_var;
     pthread_mutex_t shm_finish_mutex;
@@ -361,7 +361,6 @@ void stats(){
 void finish(){
 
 	int status1 = 0;
-    char phrase[64];
 
     my_sharedm->finish = 1;
 
@@ -394,7 +393,7 @@ void finish(){
     pthread_cond_destroy(&cond_var);
     pthread_cond_destroy(&max_var);
     pthread_cond_destroy(&min_var);
-    pthread_cond_destroy(&edge);
+    pthread_cond_destroy(&edge_var);
     pthread_cond_destroy(&my_sharedm->ready);
     sem_close(semaphore);
     sem_close(sem_pipe);
@@ -900,7 +899,7 @@ void edge_server(int edge_id) {
        	}else if(current_flag == 0 && flag_change == 1){
             finish_max = 1;
 
-            if(my_sharedm[index1].ready_time_max <= ((double) (clock()) / CLOCKS_PER_SEC)){
+            if(my_sharedm[edge_id].ready_time_max <= ((double) (clock()) / CLOCKS_PER_SEC)){
                 pthread_join(thread_vcpu[1],NULL);
             }
             else
@@ -914,21 +913,21 @@ void edge_server(int edge_id) {
 
     pthread_cancel(thread_task);
     
-    if(my_sharedm[index1].ready_time_min <= ((double) (clock()) / CLOCKS_PER_SEC) && my_sharedm[index1].ready_time_max <= ((double) (clock()) / CLOCKS_PER_SEC)){
+    if(my_sharedm[edge_id].ready_time_min <= ((double) (clock()) / CLOCKS_PER_SEC) && my_sharedm[edge_id].ready_time_max <= ((double) (clock()) / CLOCKS_PER_SEC)){
         for(int i = 0 ; i < 2 ; i++){
             pthread_join(thread_vcpu[i], NULL);
         }
     }
-    else if(my_sharedm[index1].ready_time_min <= ((double) (clock()) / CLOCKS_PER_SEC)){
+    else if(my_sharedm[edge_id].ready_time_min <= ((double) (clock()) / CLOCKS_PER_SEC)){
 
         pthread_cancel(thread_vcpu[1]);
-        pthread_join(thread_vcpu[0]);
+        pthread_join(thread_vcpu[0], NULL);
 
     }
-    else if(my_sharedm[index1].ready_time_max <= ((double) (clock()) / CLOCKS_PER_SEC)){
+    else if(my_sharedm[edge_id].ready_time_max <= ((double) (clock()) / CLOCKS_PER_SEC)){
 
         pthread_cancel(thread_vcpu[0]);
-        pthread_join(thread_vcpu[1]);
+        pthread_join(thread_vcpu[1], NULL);
 
     }
     else{
@@ -1081,7 +1080,8 @@ int main() {
     char capac1[20];
 	char capac2[20];
     char line[64];
-    char *tokens;   
+    char *tokens;
+    my_sharedm->finish = 0;
 
     signal(SIGINT, finish);
     signal(SIGTSTP, stats_signal);
