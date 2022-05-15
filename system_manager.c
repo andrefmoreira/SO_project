@@ -225,57 +225,65 @@ void *vcpu_min(void *u){
    
 
     while(finish_min == 0){
-    
+    	
     	if(my_sharedm[id].wait == 1){
-    		printf("ENTREI AQUI\n");
     		pthread_mutex_lock(&edge_mutex);
     		pthread_cond_signal(&edge_var);
     		pthread_mutex_unlock(&edge_mutex);
-    		printf("VOU ESPERAR\n");
+
     		pthread_mutex_lock(&edge_mutex);
     		pthread_cond_wait(&edge_var , &edge_mutex);
     		pthread_mutex_unlock(&edge_mutex);
-    		printf("SAI DAQUI\n");
     	}
  			
  		
  		
- 		printf("EUZINHO A ESPERA DO SIGNAL\n");
     	pthread_mutex_lock(&min_mutex);
     	pthread_cond_signal(&min_var);
     	ready_min--;
         pthread_cond_wait(&min_var , &min_mutex);
         pthread_mutex_unlock(&min_mutex);
-        printf("RECEBI O SIGNAL :)\n");
         ready_min++;
        		
         printf("%s : task was choosen !!!\n" , my_sharedm[id].name);
 		
 		my_sharedm[id].ready_time_min = my_sharedm[id].sleep_min + ((double) (clock()) / CLOCKS_PER_SEC);
-	
+		
 				
 		while(((double) (clock()) / CLOCKS_PER_SEC) < my_sharedm[id].ready_time_min){
-		
+			
 		}
-
+		
         write_file("%s:Task finished successfully.\n");
         my_sharedm[id].tasks_executed++;
         my_sharedm->total_time += my_sharedm[id].sleep_min;
         
         my_sharedm[id].busy--;
     	my_sharedm->free++;
-		printf("VCPU MUDOU O TOTAL DO FREE PAA : %d\n",my_sharedm->free);    	
+    	
+    	if(my_sharedm->finish == 1){
+    	
+    	    pthread_mutex_lock(&edge_mutex);
+    		pthread_cond_signal(&edge_var);
+    		pthread_mutex_unlock(&edge_mutex);
+    		
+    		pthread_exit(NULL);
+    	
+    	}
+    	
     	pthread_mutex_lock(&my_sharedm->mm_mutex);
         pthread_cond_signal(&my_sharedm->ready);
         pthread_mutex_unlock(&my_sharedm->mm_mutex);
+        
     }
+    
     pthread_exit(NULL);
 }
 
 
 void * vcpu_max(void *m){
 
-    printf("VCPU_MAX was activated !!! \n");
+    //printf("VCPU_MAX was activated !!! \n");
  	int id = *((int*)m);
  	my_sharedm->free++;
 	
@@ -283,27 +291,23 @@ void * vcpu_max(void *m){
     
     	if(my_sharedm[id].wait == 1){
     	
-    		printf("ENTREI AQUI\n");
     		pthread_mutex_lock(&edge_mutex);
     		pthread_cond_signal(&edge_var);
     		pthread_mutex_unlock(&edge_mutex);
-    		printf("VOU ESPERAR\n");
+
     		pthread_mutex_lock(&edge_mutex);
     		pthread_cond_wait(&edge_var , &edge_mutex);
     		pthread_mutex_unlock(&edge_mutex);
-    		printf("SAI DAQUI\n");
     		
     	}
  			
  		
- 		
- 		printf("EUZINHO A ESPERA DO SIGNAL\n");
     	pthread_mutex_lock(&max_mutex);
     	pthread_cond_signal(&max_var);
     	ready_max--;
         pthread_cond_wait(&max_var , &max_mutex);
         pthread_mutex_unlock(&max_mutex);
-        printf("RECEBI O SIGNAL :)\n");
+
         ready_max++;
        		
         printf("%s : task was choosen !!!\n" , my_sharedm[id].name);
@@ -321,7 +325,17 @@ void * vcpu_max(void *m){
         
         my_sharedm[id].busy--;
     	my_sharedm->free++;
-		printf("VCPU MUDOU O TOTAL DO FREE PAA : %d\n",my_sharedm->free);    	
+    	
+    	if(my_sharedm->finish == 1){
+    	
+    	    pthread_mutex_lock(&edge_mutex);
+    		pthread_cond_signal(&edge_var);
+    		pthread_mutex_unlock(&edge_mutex);
+    		
+    		pthread_exit(NULL);
+    	
+    	}
+    	    	
     	pthread_mutex_lock(&my_sharedm->mm_mutex);
         pthread_cond_signal(&my_sharedm->ready);
         pthread_mutex_unlock(&my_sharedm->mm_mutex);
@@ -651,7 +665,6 @@ void next_task(){
     while(1){
     	if(my_sharedm->length > 0){
     		if(my_sharedm->free <= 0){
-    			printf("tou aqui\n");
     			pthread_mutex_lock(&my_sharedm->mm_mutex);
         		pthread_cond_wait(&my_sharedm->ready , &my_sharedm->mm_mutex);
         		pthread_mutex_unlock(&my_sharedm->mm_mutex);
@@ -684,7 +697,6 @@ void next_task(){
         					my_sharedm->time_min = ((double) (clock()) / CLOCKS_PER_SEC) - t4.time;
         				} 
         				       				
-        				printf("MANDEI\n");
         				my_sharedm->free--;
 						my_sharedm[i].busy++;
         				task_sent++;
@@ -701,8 +713,7 @@ void next_task(){
         				if(((double) (clock()) / CLOCKS_PER_SEC) - t4.time < my_sharedm->time_min){
         					my_sharedm->time_min = ((double) (clock()) / CLOCKS_PER_SEC) - t4.time;
         				}
-        				
-        				printf("MANDEI\n");
+
         				my_sharedm->free--;
 						my_sharedm[i].busy++;
         				task_sent++;
@@ -771,9 +782,6 @@ void *receive_task(void *k){
 		
 		read(un_pipe[index1][0] , &task1 , sizeof(task));
 		
-		printf("VALOR DO READY_MIN %d\n",ready_min);
-		printf("Mudei o valor do free para : %d\n e do busy para : %d\n",my_sharedm->free , my_sharedm[index1].busy);
-		
     	if(my_sharedm[index1].ready_time_min <= ((double) (clock()) / CLOCKS_PER_SEC) && my_sharedm[index1].nivel_perf != -1){
 			
 			if(ready_min == 0){
@@ -783,7 +791,7 @@ void *receive_task(void *k){
         	pthread_mutex_unlock(&min_mutex);
 			
 			}
-			printf("entrei aqui\n");
+
 			pthread_mutex_lock(&min_mutex);
         	pthread_cond_signal(&min_var); 
         	pthread_mutex_unlock(&min_mutex);
@@ -797,7 +805,6 @@ void *receive_task(void *k){
         	pthread_mutex_unlock(&min_mutex);
 			
 			}
-			printf("entrei aqui1\n");
 			pthread_mutex_lock(&max_mutex);
         	pthread_cond_signal(&max_var); 
         	pthread_mutex_unlock(&max_mutex);
@@ -831,9 +838,8 @@ void edge_server(int edge_id) {
     int current_flag = my_sharedm[edge_id].nivel_perf;
     
     while(my_sharedm->finish == 0){ 
-
         sem_wait(sem_mq);
-
+        
         if(msgrcv(mq, &msg1, sizeof(msg1), 1, IPC_NOWAIT) != -1){
         	
 			sem_post(sem_mq);
@@ -863,14 +869,16 @@ void edge_server(int edge_id) {
 				pthread_cond_wait(&edge_var , &edge_mutex);
 				pthread_mutex_unlock(&edge_mutex);
 			}
-			 
+			
+			if(my_sharedm->finish == 1){
+				return;
+			}
+			
             msgsnd(mq, &msg1, sizeof(msg1), 0);
             msgrcv(mq, &msg1, sizeof(msg1), 2, 0);
             
             my_sharedm[edge_id].maintenance_done++;
             printf("%s just finished maintenance! ... \n" , my_sharedm[edge_id].name);
-            
-            printf("VOU MANDAR BROADCAST\n");
             
             pthread_mutex_lock(&edge_mutex);
 			pthread_cond_broadcast(&edge_var);
@@ -913,33 +921,37 @@ void edge_server(int edge_id) {
             finish_max = 0;
         	current_flag = my_sharedm[edge_id].nivel_perf;
         	flag_change = 0;	 
-        }	 
+        }	
     }
-
+	
+	finish_min = 1;
+	finish_max = 1;
     pthread_cancel(thread_task);
     
-    if(my_sharedm[edge_id].ready_time_min <= ((double) (clock()) / CLOCKS_PER_SEC) && my_sharedm[edge_id].ready_time_max <= ((double) (clock()) / CLOCKS_PER_SEC)){
+    if(my_sharedm[edge_id].ready_time_min > ((double) (clock()) / CLOCKS_PER_SEC) && my_sharedm[edge_id].ready_time_max > ((double) (clock()) / CLOCKS_PER_SEC)){
         for(int i = 0 ; i < 2 ; i++){
             pthread_join(thread_vcpu[i], NULL);
         }
     }
-    else if(my_sharedm[edge_id].ready_time_min <= ((double) (clock()) / CLOCKS_PER_SEC)){
-
-        pthread_cancel(thread_vcpu[1]);
-        pthread_join(thread_vcpu[0], NULL);
+    else if(my_sharedm[edge_id].ready_time_min > ((double) (clock()) / CLOCKS_PER_SEC)){
+        pthread_cancel(thread_vcpu[1]);        
+        pthread_join(thread_vcpu[0] , NULL);
 
     }
-    else if(my_sharedm[edge_id].ready_time_max <= ((double) (clock()) / CLOCKS_PER_SEC)){
-
+    else if(my_sharedm[edge_id].ready_time_max > ((double) (clock()) / CLOCKS_PER_SEC)){
         pthread_cancel(thread_vcpu[0]);
-        pthread_join(thread_vcpu[1], NULL);
+        
+    	pthread_mutex_lock(&my_sharedm->mm_mutex);
+        pthread_cond_wait(&my_sharedm->ready , &my_sharedm->mm_mutex);
+        pthread_mutex_unlock(&my_sharedm->mm_mutex);
+        
+        pthread_join(thread_vcpu[1] , NULL);
 
     }
     else{
         pthread_cancel(thread_vcpu[0]);
         pthread_cancel(thread_vcpu[1]);
     }
-
 }
 
 
@@ -987,12 +999,15 @@ void task_manager() { //TASK MANAGER
     pthread_cancel(thread_disp);
 
     for(int i = 0 ; i < edge_servers ; i++){
-        if(my_sharedm[i].nivel_perf == -1){
-            kill(my_sharedm[i].id_edge,SIGKILL);
-        }
+        if(my_sharedm[i].ready_time_min > ((double) (clock()) / CLOCKS_PER_SEC) || my_sharedm[i].ready_time_max > ((double) (clock()) / CLOCKS_PER_SEC)){
+        	waitpid(my_sharedm[i].id_edge , &x, 0);
+        	//printf("%s just finished\n" , my_sharedm[i].name);
+         }
+         else{
+         	//printf("%s just finished\n" , my_sharedm[i].name);
+         	kill(my_sharedm[i].id_edge,SIGKILL);
+         }
     }
-
-    while (wait(&x) > 0);
 }
 
 void monitor() {
