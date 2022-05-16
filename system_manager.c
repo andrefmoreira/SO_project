@@ -370,8 +370,12 @@ void stats(){
     write_file(phrase);
 
     double average_time = 0;
-
-    average_time = my_sharedm->total_time / total_tasks;
+	
+    if(total_tasks == 0){
+	average_time = 0;    
+    }else{
+    	average_time = my_sharedm->total_time / total_tasks; 
+    }
     sprintf(phrase, "Average response time: %lf \n", average_time);
     write_file(phrase);
 
