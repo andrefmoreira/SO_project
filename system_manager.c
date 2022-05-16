@@ -377,15 +377,14 @@ void stats(){
 
 
 
-
 void finish(){
 
 	int status1 = 0;
-
+	write_file("\n%s:Signal SIGINT received ... waiting for last tasks to close simulator.\n"); 
+	
+	
     my_sharedm->finish = 1;
 
-    write_file("\n%s:Signal SIGINT received ... waiting for last tasks to close simulator.\n"); 
-    
     kill(my_sharedm->id_monitor,SIGKILL);
     kill(my_sharedm->id_maintenance_manager,SIGKILL);
         
@@ -397,8 +396,10 @@ void finish(){
     end = 1;
     
     while ((wait(&status1)) > 0);
+    
+    printf("QUASE\n");
 
-    void stats();
+    stats();
 
     write_file("%s:Simulator closed.\n");
 
@@ -415,6 +416,7 @@ void finish(){
     pthread_cond_destroy(&min_var);
     pthread_cond_destroy(&edge_var);
     pthread_cond_destroy(&my_sharedm->ready);
+    msgctl(mq, IPC_RMID, 0);
     sem_close(semaphore);
     sem_close(sem_pipe);
     sem_close(sem_mq);
@@ -427,6 +429,7 @@ void finish(){
 	
     exit(0);
 }
+
 
 
 void stats_signal(){
@@ -456,7 +459,7 @@ void read_pipe(){
 		
 		//verificamos se a palavra que recebemos e EXIT e, se nao tem nada a seguir dela.
     	if(strcmp(aux , "EXIT") == 0 && text_pipe[4] == '\n'){
-        	finish();
+        	kill(getppid() , SIGINT);
 		}
 		
 		if(text_pipe[5] == '\n'){
@@ -1103,6 +1106,8 @@ int main() {
 
     signal(SIGINT, finish);
     signal(SIGTSTP, stats_signal);
+    
+    
 	
     log_file  = fopen("log_file.txt", "w");
     fclose(log_file);
