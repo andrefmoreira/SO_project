@@ -87,6 +87,10 @@ time_t t;
 struct tm *tm;
 
 char s[64];
+char choosen[128];
+char texto[128];
+char texto1[128];
+char text_file[128];
 char queue_pos[20];
 char max_wait[20];
 char text_pipe[128];
@@ -103,6 +107,7 @@ int ready_max = 0;
 double tempo_total = 0;
 struct task *num_tasks;
 
+sigset_t set;
 task t2;
 FILE *log_file;
 FILE *config_file;
@@ -396,14 +401,12 @@ void finish(){
     end = 1;
     
     while ((wait(&status1)) > 0);
-    
-    printf("QUASE\n");
 
     stats();
 
     write_file("%s:Simulator closed.\n");
 
-    pthread_mutex_destroy(&mutex);
+	pthread_mutex_destroy(&mutex);
     pthread_mutex_destroy(&edge_mutex);
     pthread_mutex_destroy(&max_mutex);
     pthread_mutex_destroy(&min_mutex);
@@ -559,7 +562,7 @@ int read_file() {
     char num_edge_servers[20];
     int num_servers;
 
-    config_file = fopen("config_file.txt" , "r");
+    config_file = fopen(text_file , "r");
 
     if(config_file == NULL){
         write_file("%s:Error opening config file!\n");
@@ -708,7 +711,8 @@ void next_task(){
         		}
         		
         		else if(my_sharedm[i].nivel_perf == 1 && (my_sharedm[i].busy == 1 || my_sharedm[i].busy == 0) && task_sent == 0){
-        		
+        			
+        			printf("entrei\n");
         			if(check_time(i , t4)){
         			
         				write(un_pipe[i][1] , &t4 , sizeof(task));
@@ -767,7 +771,8 @@ void * thread_scheduler(void *x){
     while(1){
     
 		read_pipe();
-        printf("task %d just arrived\n" , t2.id);
+        sprintf(texto1 ,"task %d just arrived\n" , t2.id);
+        write_file(texto1);
         add_task(t2);
 
     }
@@ -838,6 +843,7 @@ void edge_server(int edge_id) {
     pthread_t thread_task;
     pthread_create(&thread_task , NULL , receive_task , (void *) &edge_id);
     pthread_create(&thread_vcpu[0], NULL, vcpu_min , (void *) &edge_id); 
+    
     int current_flag = my_sharedm[edge_id].nivel_perf;
     
     while(my_sharedm->finish == 0){ 
@@ -847,7 +853,8 @@ void edge_server(int edge_id) {
         	
 			sem_post(sem_mq);
 			my_sharedm[edge_id].nivel_perf = -1;
-            printf("%s was choosen for maintenance!...\n", my_sharedm[edge_id].name);
+            sprintf(choosen , "%s was choosen for maintenance!...\n", my_sharedm[edge_id].name);
+            write_file(choosen);
             received_msg++; 
             msg1.mtype = 3;
 			
@@ -867,21 +874,22 @@ void edge_server(int edge_id) {
 			else if(my_sharedm[edge_id].busy == 1){
 			
 				my_sharedm[edge_id].wait = 1;
-				
+
 				pthread_mutex_lock(&edge_mutex);
 				pthread_cond_wait(&edge_var , &edge_mutex);
 				pthread_mutex_unlock(&edge_mutex);
 			}
 			
 			if(my_sharedm->finish == 1){
-				return;
+				exit(0);
 			}
 			
             msgsnd(mq, &msg1, sizeof(msg1), 0);
             msgrcv(mq, &msg1, sizeof(msg1), 2, 0);
             
             my_sharedm[edge_id].maintenance_done++;
-            printf("%s just finished maintenance! ... \n" , my_sharedm[edge_id].name);
+            sprintf(texto , "%s just finished maintenance! ... \n" , my_sharedm[edge_id].name);
+            write_file(texto);
             
             pthread_mutex_lock(&edge_mutex);
 			pthread_cond_broadcast(&edge_var);
@@ -1024,9 +1032,9 @@ void monitor() {
                 my_sharedm->nivel_perf = 1;
             }
             for(int i = 0; i < edge_servers ; i++)
-                my_sharedm[i].nivel_perf = 1;
+                my_sharedm[i].nivel_perf = 0;
             change_level++;
-            //printf("FOI TROCADO O NIVEL !!!!!!! \n");
+            write_file("Performance level just changed !!\n");
         }
 
         if(my_sharedm->nivel_perf == 1){
@@ -1096,18 +1104,32 @@ for(int i = 0 ; i < edge_servers - 1 ; i++)
 }
 
 
-int main() {
+int main(int argc, char *argv[]) {
 
     int status = 0;
     char capac1[20];
 	char capac2[20];
     char line[64];
     char *tokens;   
-
+	
+	
+	if (argc != 2) {
+        printf("Wrong number of parameters!\n");
+        exit(-1);
+    }
+    
+    sigfillset(&set);
+    
+    sigdelset(&set , SIGINT);
+    sigdelset(&set , SIGTSTP);
+    
+    sigprocmask(SIG_BLOCK ,&set ,NULL);
+    
+    strcpy(text_file , argv[1]);
+    
     signal(SIGINT, finish);
     signal(SIGTSTP, stats_signal);
-    
-    
+   
 	
     log_file  = fopen("log_file.txt", "w");
     fclose(log_file);
