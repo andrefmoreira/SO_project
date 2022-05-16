@@ -38,9 +38,9 @@ typedef struct {
 } mq_msg;
 
 typedef struct {
-	int queuepos;
-	int maxwait;
-	int edgeservers;
+    int queuepos;
+    int maxwait;
+    int edgeservers;
     int nivel_perf;
     char name[64];
     int time_min;
